@@ -561,9 +561,10 @@ from tools import *
 5. Do not treat a segment length like SU as an arc length unless the prompt explicitly says it is an arc length.
 6. Before using a formula, verify the object type: angle, arc, chord, side length, area, circumference, or radius.
 7. If the problem asks for auxiliary lines, propose them first; if no auxiliary line is needed, state that explicitly and solve using a valid theorem.
-8. For chess `winner_id` tasks, ACTION 0 must render the current board from the FEN as the initial visual sketchpad before making any conclusion.
-9. For chess `winner_id` tasks, after the initial board rendering, every additional non-trivial action should, when feasible, also produce a visual sketch tied to the current reasoning step, such as a board rendering plus terminal-status prints, legal-move summaries, attacked-square overlays, or another board-centered visualization.
-10. For chess `winner_id` tasks, do not guess from the picture alone. After rendering the board, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the visual sketch before answering.
+8. For chess `winner_id` tasks, use text + Python code + HTML intermediate drafts. ACTION 0 must be a Python code block that writes a self-contained HTML file as the initial visual sketchpad before making any conclusion.
+9. For chess `winner_id` tasks, each HTML draft must include the board rendered from the FEN, FEN text, side to move, terminal-status signals, legal-move summary, and a concise evidence section. The code must print `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.
+10. For chess `winner_id` tasks, after the initial HTML draft, every additional non-trivial action should, when feasible, write an updated HTML draft tied to the current reasoning step, such as check status, legal-move information, attacked-square overlays, material balance, king safety, or another board-centered visualization.
+11. For chess `winner_id` tasks, do not guess from the picture alone. After writing the HTML board draft, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the HTML draft before answering.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE: Solving a math convexity problem
@@ -653,40 +654,75 @@ ANSWER: yes, there is a path. TERMINATE
 # EXAMPLE: Solving a winner id problem
 # USER REQUEST #: Given the following FEN of a chess game, predict the eventual winner of the game: white, black, or draw.
 # RESULT #:
-THOUGHT 0: I should first render the board as the initial visual sketchpad, and at the same time print the key `python-chess` terminal-status signals so the first step gives both a board image and rules-based evidence.
+THOUGHT 0: I should first create an HTML visual draft from the FEN. The Python code will write a self-contained HTML file containing an SVG board plus `python-chess` terminal-status signals, so the first step gives both a visual sketch and rules-based evidence.
 ACTION 0:
 ```python
 import chess
 import chess.svg
-from cairosvg import svg2png
-from PIL import Image
-from io import BytesIO
+import html
+from pathlib import Path
 
 fen = "1r1q1rk1/1b2b1Qp/4pp1B/pp1nP3/2pPN3/P1P5/1PB3PP/R4RK1 b - - 0 18"
 board = chess.Board(fen)
 
-svg_data = chess.svg.board(board)
-png_bytes = svg2png(bytestring=svg_data)
-image = Image.open(BytesIO(png_bytes))
-display(image)
-
-print("turn", "white" if board.turn == chess.WHITE else "black")
-print("is_checkmate", board.is_checkmate())
-print("is_stalemate", board.is_stalemate())
-print("is_insufficient_material", board.is_insufficient_material())
-print("legal_moves", board.legal_moves.count())
-print("is_check", board.is_check())
+signals = {{
+    "turn": "white" if board.turn == chess.WHITE else "black",
+    "is_checkmate": board.is_checkmate(),
+    "is_stalemate": board.is_stalemate(),
+    "is_insufficient_material": board.is_insufficient_material(),
+    "legal_moves": board.legal_moves.count(),
+    "is_check": board.is_check(),
+}}
+board_svg = chess.svg.board(board, size=420)
+rows = "".join(
+    f"<tr><th>{{html.escape(str(k))}}</th><td>{{html.escape(str(v))}}</td></tr>"
+    for k, v in signals.items()
+)
+evidence = (
+    "Black is to move, is in check, and has zero legal moves; this is checkmate, "
+    "so White is the winner."
+)
+doc = f'''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Winner ID Visual Draft</title>
+  <style>
+    body {{{{ font-family: Arial, sans-serif; margin: 24px; color: #1f2933; }}}}
+    .layout {{{{ display: grid; grid-template-columns: 450px 1fr; gap: 24px; align-items: start; }}}}
+    .panel {{{{ border: 1px solid #c9d1d9; border-radius: 6px; padding: 14px; }}}}
+    table {{{{ border-collapse: collapse; width: 100%; }}}}
+    th, td {{{{ border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; }}}}
+    .answer {{{{ font-weight: 700; color: #0f5132; }}}}
+    code {{{{ overflow-wrap: anywhere; }}}}
+  </style>
+</head>
+<body>
+  <h1>Chess Winner ID Visual Draft</h1>
+  <p><strong>FEN:</strong> <code>{{html.escape(fen)}}</code></p>
+  <div class="layout">
+    <section class="panel">{{board_svg}}</section>
+    <section class="panel">
+      <h2>Rules Signals</h2>
+      <table>{{rows}}</table>
+      <h2>Evidence</h2>
+      <p>{{html.escape(evidence)}}</p>
+      <p class="answer">Predicted winner: white</p>
+    </section>
+  </div>
+</body>
+</html>'''
+path = Path("visual_draft_step_0.html")
+path.write_text(doc, encoding="utf-8")
+print(f"HTML_DRAFT_PATH: {{path}}")
+print("HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is checkmated.")
 ```
 OBSERVATION: Execution success. The output is as follows:
-turn black
-is_checkmate True
-is_stalemate False
-is_insufficient_material False
-legal_moves 0
-is_check True
+HTML_DRAFT_PATH: visual_draft_step_0.html
+HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is checkmated.
 If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next REFLECTION, THOUGHT and ACTION.
-REFLECTION 1: The initial step was sufficient because it produced both the board sketch and the decisive terminal-status evidence.
-THOUGHT 1: The board sketch matches the FEN, and the printed rules-based signals show that Black is to move, Black is in check, and there are no legal moves. Therefore the position is checkmate and White is the winner.
+REFLECTION 1: The initial step was sufficient because the HTML draft contains both the board sketch and the decisive terminal-status evidence.
+THOUGHT 1: The HTML draft matches the FEN, and its rules table shows that Black is to move, Black is in check, and there are no legal moves. Therefore the position is checkmate and White is the winner.
 ACTION 1: No action needed.
 ANSWER: white. TERMINATE
 

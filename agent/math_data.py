@@ -82,11 +82,14 @@ def prepare_winner_id_prompt(example):
         "You must reason from the current FEN only. Do not use or assume any hidden future moves.\n"
     )
     text_query += (
-        "Always start by rendering the current board from the FEN as a visual sketchpad in THOUGHT 0 / ACTION 0.\n"
+        "Always start by creating an HTML intermediate draft in THOUGHT 0 / ACTION 0. "
+        "The ACTION must be Python code that writes a self-contained HTML file in the current working directory.\n"
+        "The HTML draft must include the current board rendered from the FEN, the FEN text, side to move, "
+        "terminal-status signals, legal-move summary, and a concise evidence section.\n"
         "Use `python-chess` rules to reason carefully from the current position.\n"
-        "After the initial board rendering, each additional non-trivial chess analysis step should, when feasible, "
-        "produce another visual sketch that highlights the position you are reasoning about, such as the board with check status, "
-        "legal-move information, attacked squares, or another board-centered visualization.\n"
+        "After the initial HTML draft, each additional non-trivial chess analysis step should, when feasible, "
+        "write an updated HTML draft that highlights the position you are reasoning about, such as check status, "
+        "legal-move information, attacked squares, material balance, king safety, or another board-centered visualization.\n"
         "Check whether the position is immediately terminal with APIs such as `is_checkmate()`, "
         "`is_stalemate()`, `is_insufficient_material()`, `is_check()`, and legal move counts.\n"
         "If the game is not immediately over, make your best prediction of the eventual winner from the current position.\n"
