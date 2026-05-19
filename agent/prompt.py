@@ -19,11 +19,11 @@ If the result indicates there is an error, fix the error and output the code aga
 
 For each turn after the first one, you should first do a "REFLECTION" on whether your previous reasoning or action was flawed, what the concrete issue is, and how to correct it. Then do a "THOUGHT", based on the images and text you see.
 Your reflection must be concise and operational. If the previous step looks sound, say so briefly and explain why you are continuing.
-If you think you get the answer to the intial user request, you can reply with "ANSWER: <your answer>" and ends with "TERMINATE".
+If you think you get the answer to the intial user request, you can reply with "ANSWER: concrete_final_value" and ends with "TERMINATE".
 """
 
 HTML_VISUAL_ASSISTANT_MESSAGE = """You are a structured reasoning planner.
-Your job is to solve the task while using HTML visual drafts as the intermediate sketchpad instead of JSON drafts.
+Use HTML as a dynamic visual draft: each non-final ACTION writes one valid self-contained HTML file.
 You are coding in a Python jupyter notebook environment. Each ACTION must be one executable ```python``` block unless you are giving the final ANSWER.
 Do not output JSON as the draft format.
 
@@ -32,34 +32,23 @@ For each non-final turn:
 2. Then write THOUGHT with the current reasoning.
 3. Then write ACTION with Python code that writes a self-contained HTML file in the current working directory.
 
-Each HTML draft should function as a structured visual sketchpad:
-- include a visible title and the original prompt;
-- include a Thinking Text section explaining the reasoning step;
-- include an Objects / Entities section;
-- include an Attributes section when relevant;
-- include a Relations / Constraints section for spatial, causal, temporal, physical, cultural, or textual-image constraints;
-- include a State / Effects View and/or Layout / Visual Draft section using semantic HTML, CSS boxes, tables, mini-diagrams, boards, charts, and/or inline SVG arrows when useful;
-- include an Open Issues / Revision Targets section when uncertainty remains.
-
-HTML is the visual draft format, so it SHOULD make latent state visible when possible:
-- for geometry: auxiliary lines, givens table, symbolic labels, theorem/equation panel, not-to-scale diagram;
-- for graph tasks: node/edge tables, source/sink or frontier highlights, flow/cut/path state, graph diagrams;
-- for board games: board rendering, side to move, legal-move/status signals, attacked squares, tactical highlights;
-- for image or scene tasks: layout boxes, depth/layer hints, arrows, occlusion hints, visual emphasis.
-
-The HTML must be human-readable and self-contained. Use escaped text when embedding user content.
-You may use matplotlib, networkx, python-chess, or similar Python tools to generate auxiliary figures, overlays, or board renders, but those figures must be saved and then embedded or referenced inside the HTML draft with a short caption explaining their reasoning role.
-The code should print the written HTML path and a compact textual summary of what the draft contains.
+HTML draft contract:
+- Valid UTF-8 HTML containing html/head/body tags.
+- Include visible sections whose labels contain: Thinking, Objects, Relations, State, Revision, Retained, Referenced Images.
+- Treat the draft as mutable memory: preserve only useful prior content, edit wrong content, delete stale content.
+- You may reference 0, 1, or many images. If Python draws auxiliary lines or overlays, save the image and reference it with a caption explaining its reasoning role.
+- Use HTML's stronger expressive power when useful: tables, CSS layout, inline SVG, diagrams, boards, arrows, overlays, charts, and image references.
+- Print exactly: HTML_DRAFT_PATH: <path> and HTML_DRAFT_SUMMARY: <short summary>.
 Never include `ANSWER:` or `TERMINATE` inside the Python code block; the final answer must be normal text outside code.
 Never use placeholder final answers such as `{answer}`, `{final_answer}`, `<answer>`, or `[answer]`. The final answer must be a concrete label/value required by the task, such as `yes`, `no`, `(A)`, `128`, or `white`.
 
 Use local revision rather than regenerating the whole plan when the previous draft only needs a focused fix.
 If you have enough confidence, reply with:
-ANSWER: <final reasoning result> TERMINATE
+ANSWER: concrete_final_value TERMINATE
 """
 
 JSON_VISUAL_ASSISTANT_MESSAGE = """You are a structured reasoning planner.
-Your job is to solve the task while using JSON declarative drafts as the intermediate sketchpad instead of HTML drafts.
+Use JSON as a dynamic declarative visual draft: each non-final ACTION writes one valid JSON file.
 You are coding in a Python jupyter notebook environment. Each ACTION must be one executable ```python``` block unless you are giving the final ANSWER.
 Do not output HTML as the draft format.
 
@@ -68,34 +57,20 @@ For each non-final turn:
 2. Then write THOUGHT with the current reasoning.
 3. Then write ACTION with Python code that writes a self-contained JSON file in the current working directory.
 
-Each JSON draft should preserve the same intermediate reasoning content and section structure as an equivalent HTML draft, but encode it declaratively as JSON fields instead of rendering it directly:
-- include title and original_prompt;
-- include thinking_text for the current reasoning step;
-- include objects_entities when relevant;
-- include attributes when relevant;
-- include relations_constraints for spatial, causal, temporal, physical, cultural, textual-image, mathematical, graph, or game-state constraints;
-- include state_effects_view for current state and derived effects;
-- include layout_visual_draft to describe the same layout/diagram/board/highlight intent that HTML would render;
-- include open_issues_revision_targets when uncertainty remains.
-
-JSON should not omit visual-draft information. Instead, encode it declaratively:
-- for geometry: auxiliary lines, givens table entries, symbolic labels, theorem/equation panels, and not-to-scale diagram intent;
-- for graph tasks: node/edge tables, source/sink or frontier highlights, flow/cut/path state, and graph-diagram intent;
-- for board games: board state, side to move, legal-move/status signals, attacked squares, tactical highlights, and board-rendering intent;
-- for image or scene tasks: layout boxes, depth/layer hints, arrows, occlusion hints, and visual emphasis.
-
-The JSON must be human-readable, self-contained, and valid. Use stable top-level keys so later revisions only change content, not the representation style. The main difference from HTML should be representation only: HTML renders the draft directly, while JSON describes the same draft structure and marks declaratively.
-
-The code should write the JSON file and print exactly two lines using Python print statements:
-- JSON_DRAFT_PATH: <path>
-- JSON_DRAFT_SUMMARY: <short summary>
+JSON draft contract:
+- Valid UTF-8 JSON whose root is an object.
+- Include keys: title, original_prompt, thinking_text, objects_entities, relations_constraints, state_effects_view, retained_context, referenced_images, open_issues_revision_targets.
+- Treat the draft as mutable memory: preserve only useful prior fields, edit wrong fields, delete stale fields.
+- You may reference 0, 1, or many images. If Python draws auxiliary lines or overlays, save the image and store its path plus reasoning role in referenced_images.
+- JSON should encode the same reasoning content declaratively; it does not need to visually render layout unless layout is relevant evidence.
+- Print exactly: JSON_DRAFT_PATH: <path> and JSON_DRAFT_SUMMARY: <short summary>.
 Do not put raw text like `JSON_DRAFT_PATH: ...` or `JSON_DRAFT_SUMMARY: ...` inside the code block unless it is inside a Python print(...) call.
 Never include `ANSWER:` or `TERMINATE` inside the Python code block; the final answer must be normal text outside code.
 Never use placeholder final answers such as `{answer}`, `{final_answer}`, `<answer>`, or `[answer]`. The final answer must be a concrete label/value required by the task, such as `yes`, `no`, `(A)`, `128`, or `white`.
 
 Use local revision rather than regenerating the whole plan when the previous draft only needs a focused fix.
 If you have enough confidence, reply with:
-ANSWER: <final reasoning result> TERMINATE
+ANSWER: concrete_final_value TERMINATE
 """
 
 
@@ -278,7 +253,7 @@ from tools import *
 # REQUIREMENTS #:
 1. The generated actions can resolve the given user request # USER REQUEST # perfectly. The user request is reasonable and can be solved. Try your best to solve the request.
 2. The arguments of a tool must be the same number, modality, and format specified in # TOOL LIST #;
-3. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
+3. If you think you got the answer, use ANSWER: concrete_final_value to provide the answer, and ends with TERMINATE.
 4. All images in the initial user request are stored in PIL Image objects named image_1, image_2, ..., image_n. You can use these images in your code blocks. Use display() function to show the image in the notebook for you too see.
 5. Use as few tools as possible. Only use the tools for the use cases written in the tool description. You can use multiple tools in a single action.
 6. You must return an answer with the choice letter if the user request is a multiple-choice question.
@@ -309,7 +284,7 @@ display(image_1_dog_detection.annotated_image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.>
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: A dog is detected by the tool. After double-checking, I can confirm that the tool is correct and there is a dog in the image.
 ACTION 1: No action needed.
 ANSWER: Yes, there is a dog in the image. So the answer is (a). TERMINATE
@@ -327,7 +302,7 @@ display(image_1_bucket_detection.annotated_image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.>
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: The bucket has been detected and is labeled as "bucket 1" in the image. I will zoom in on the bucket to identify its color.
 ACTION 1:
 ```python
@@ -453,7 +428,7 @@ ANSWER: The third image fits into the black part. TERMINATE
             prompt += f"# USER IMAGE stored in {', '.join([f'image_{i}' for i in range(1, n_images+1)])} as PIL image.\n"
         else:
             prompt += "# USER IMAGE: No image provided.\n"
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -477,7 +452,7 @@ ANSWER: The third image fits into the black part. TERMINATE
             prompt += (
                 "First provide REFLECTION on whether the previous reasoning/action was valid or needs correction, "
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
-                "ANSWER: <your answer> and ends with TERMINATE."
+                "ANSWER: concrete_final_value and ends with TERMINATE."
             )
             return prompt
     
@@ -494,49 +469,31 @@ def python_codes_for_images_reading(image_paths):
 
 
 class HTMLVisualPrompt:
-    """Prompt generator for StruVis-style HTML visual drafts.
+    """Prompt generator for StruVis-style HTML visual drafts."""
 
-    This keeps the VisualSketchpad planner/executor loop but replaces
-    intermediate image/JSON sketches with self-contained HTML artifacts.
-    """
+    draft_format = "html"
 
     def initial_prompt(self, query: str, n_images: int = 0) -> str:
         return f"""# USER REQUEST #
 {query}
 
 # GOAL #
-Reason about this text-to-image generation request using StruVis-style thinking:
-1. Decompose the prompt into explicit and hidden visual constraints.
-2. Build an HTML structured-vision draft, not JSON and not an image.
-3. Use the draft to check object coverage, attributes, relations, layout, physical/cultural/scientific consistency, and text-image design constraints.
-4. Revise the HTML draft locally if needed.
-5. Finish with a final generative prompt suitable for a text-to-image model.
+Reason with HTML visual drafts, then finish with the required final answer or generative prompt.
 
 # ACTION FORMAT #
-For every non-final step, return exactly one Python code block. The code must write an HTML file such as `visual_draft_step_0.html` and print:
-- HTML_DRAFT_PATH: <path>
-- HTML_DRAFT_SUMMARY: <short summary>
+For every non-final step, return exactly one Python code block. It must write one UTF-8 `.html` file and print exactly:
+HTML_DRAFT_PATH: <path>
+HTML_DRAFT_SUMMARY: <short summary>
 
-# HTML DRAFT REQUIREMENTS #
-Use semantic HTML, CSS, and optional inline SVG. Do not use JSON as the draft representation.
-The HTML should make visual relationships and intermediate state inspectable through sections, diagrams, boxes, arrows, labels, boards, tables, charts, and highlights.
-Prefer a compact but complete draft over a long narrative. Use the following sections when applicable:
-- Thinking Text
-- Objects / Entities
-- Attributes
-- Relations / Constraints
-- State / Effects View
-- Layout / Visual Draft
-- Open Issues / Revision Targets
-
-HTML is allowed to visualize state and effects directly.
-Examples:
-- geometry: a not-to-scale diagram, auxiliary lines, labels, givens table, theorem/equation panel;
-- graph: rendered graph, node/edge table, source/sink markers, current path/cut/flow state;
-- board games: board SVG/HTML table, side to move, legal-move and terminal-status table, attacked-square or tactical highlights.
+# DYNAMIC HTML DRAFT CONTRACT #
+- The file must contain html/head/body tags and visible sections labelled Thinking, Objects, Relations, State, Revision, Retained, Referenced Images.
+- Treat each draft as editable memory. Keep only prior content that is still useful, correct mistakes, delete stale details, and add new evidence.
+- You may reference 0, 1, or many images. If you draw auxiliary lines, overlays, charts, boards, or diagrams with Python, save the image and reference it in the HTML with a caption explaining why it matters.
+- Use HTML's expressive power when helpful: CSS layout, tables, inline SVG arrows, image overlays, board renderings, diagrams, charts, and spatial grouping.
+- Do not use JSON as the draft representation.
 
 # FINAL FORMAT #
-When the draft is complete, respond with `ANSWER: ... TERMINATE`.
+When the draft is complete, respond with `ANSWER: concrete_final_value TERMINATE`.
 """
 
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -544,7 +501,7 @@ When the draft is complete, respond with `ANSWER: ... TERMINATE`.
             "OBSERVATION: The previous response did not contain one executable Python code block.\n"
             f"Parser message: {error_message}\n"
             "Continue with REFLECTION, THOUGHT, and exactly one ACTION code block that writes the HTML draft. "
-            "If the draft is complete, use ANSWER: ... TERMINATE."
+            "If the draft is complete, use ANSWER: concrete_final_value TERMINATE."
         )
 
     def get_exec_feedback(self, exit_code: int, output: str) -> str:
@@ -556,59 +513,43 @@ When the draft is complete, respond with `ANSWER: ... TERMINATE`.
         return (
             f"OBSERVATION: Execution success. The output is as follows:\n{output}\n"
             "Inspect the HTML draft path and summary. If the draft is incomplete or inconsistent, revise it locally in the next ACTION. "
-            "If it is sufficient, provide ANSWER: <final reasoning result> TERMINATE as plain text with no code block."
+            "If it is sufficient, provide ANSWER: concrete_final_value TERMINATE as plain text with no code block."
+        )
+
+    def get_validation_feedback(self, validation_message: str, output: str) -> str:
+        return (
+            "OBSERVATION: The previous code executed, but the HTML draft failed validation.\n"
+            f"Validation message: {validation_message}\n"
+            f"Execution output:\n{output}\n"
+            "Revise with REFLECTION, THOUGHT, and exactly one ACTION code block that writes a valid dynamic HTML draft."
         )
 
 
 class JSONVisualPrompt:
-    """Prompt generator for StruVis-style JSON visual drafts.
+    """Prompt generator for StruVis-style JSON visual drafts."""
 
-    This mirrors HTMLVisualPrompt as closely as possible so the primary
-    variable under comparison is the draft representation format.
-    """
+    draft_format = "json"
 
     def initial_prompt(self, query: str, n_images: int = 0) -> str:
         return f"""# USER REQUEST #
 {query}
 
 # GOAL #
-Reason about this text-to-image generation request using StruVis-style thinking:
-1. Decompose the prompt into explicit and hidden visual constraints.
-2. Build a JSON structured-vision draft, not HTML and not an image.
-3. Use the draft to check object coverage, attributes, relations, layout, physical/cultural/scientific consistency, and text-image design constraints.
-4. Revise the JSON draft locally if needed.
-5. Finish with a final generative prompt suitable for a text-to-image model.
+Reason with JSON declarative visual drafts, then finish with the required final answer or generative prompt.
 
 # ACTION FORMAT #
-For every non-final step, return exactly one Python code block. The code must write a JSON file such as `visual_draft_step_0.json` and print:
-- JSON_DRAFT_PATH: <path>
-- JSON_DRAFT_SUMMARY: <short summary>
+For every non-final step, return exactly one Python code block. It must write one UTF-8 `.json` file and print exactly:
+JSON_DRAFT_PATH: <path>
+JSON_DRAFT_SUMMARY: <short summary>
 
-# JSON DRAFT REQUIREMENTS #
-Use valid JSON only. Do not use HTML as the draft representation.
-The JSON should capture the same reasoning content as the HTML draft, but in symbolic machine-readable form rather than visual layout form.
-Prefer a compact but complete draft over a long narrative. Use the following top-level sections when applicable:
-- title
-- original_prompt
-- reasoning_step
-- entities
-- attributes
-- relations_constraints
-- state_snapshot
-- derived_state_or_effects
-- evidence
-- revision_targets
-
-Do not create fake visual-layout fields unless the task inherently requires coordinates. JSON should focus on symbolic state and evidence.
-Examples:
-- geometry: givens, target, objects, symbolic_constraints, auxiliary_constructions, theorem_candidates, equations;
-- graph: nodes, edges, weights_or_capacities, source_sink, algorithm_state, current_path_or_cut, residual_state;
-- board games: board_state, side_to_move, legal_moves_summary, terminal_signals, tactical_state, evidence.
-
-Keep the reasoning content as close as possible to what an equivalent HTML draft would contain; the main difference should be representational form: HTML visualizes, JSON symbolizes.
+# DYNAMIC JSON DRAFT CONTRACT #
+- The JSON root must be an object with keys: title, original_prompt, thinking_text, objects_entities, relations_constraints, state_effects_view, retained_context, referenced_images, open_issues_revision_targets.
+- Treat each draft as editable memory. Keep only prior fields that are still useful, correct mistakes, delete stale details, and add new evidence.
+- You may reference 0, 1, or many images. If you draw auxiliary lines, overlays, charts, boards, or diagrams with Python, save the image and store its path plus reasoning role in referenced_images.
+- JSON should encode visual evidence declaratively. Do not use HTML as the draft representation.
 
 # FINAL FORMAT #
-When the draft is complete, respond with `ANSWER: ... TERMINATE`.
+When the draft is complete, respond with `ANSWER: concrete_final_value TERMINATE`.
 """
 
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -616,7 +557,7 @@ When the draft is complete, respond with `ANSWER: ... TERMINATE`.
             "OBSERVATION: The previous response did not contain one executable Python code block.\n"
             f"Parser message: {error_message}\n"
             "Continue with REFLECTION, THOUGHT, and exactly one ACTION code block that writes the JSON draft. "
-            "If the draft is complete, use ANSWER: ... TERMINATE."
+            "If the draft is complete, use ANSWER: concrete_final_value TERMINATE."
         )
 
     def get_exec_feedback(self, exit_code: int, output: str) -> str:
@@ -628,13 +569,21 @@ When the draft is complete, respond with `ANSWER: ... TERMINATE`.
         return (
             f"OBSERVATION: Execution success. The output is as follows:\n{output}\n"
             "Inspect the JSON draft path and summary. If the draft is incomplete or inconsistent, revise it locally in the next ACTION. "
-            "If it is sufficient, provide ANSWER: <final reasoning result> TERMINATE as plain text with no code block."
+            "If it is sufficient, provide ANSWER: concrete_final_value TERMINATE as plain text with no code block."
+        )
+
+    def get_validation_feedback(self, validation_message: str, output: str) -> str:
+        return (
+            "OBSERVATION: The previous code executed, but the JSON draft failed validation.\n"
+            f"Validation message: {validation_message}\n"
+            f"Execution output:\n{output}\n"
+            "Revise with REFLECTION, THOUGHT, and exactly one ACTION code block that writes a valid dynamic JSON draft."
         )
 
 
 INITIAL_RESULT_SUFFIX = (
     "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with "
-    "ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+    "ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
 )
 
 
@@ -642,6 +591,9 @@ def _draft_task_specific_guidance(task_type: str) -> str:
     if task_type == "geo":
         return (
             "- For geometry, keep symbolic givens, target, auxiliary constructions, theorem candidates, and equation chains explicit.\n"
+            "- For geometry, the first non-final draft should normally generate a matplotlib/PIL evidence image, preferably the original diagram redrawn with useful auxiliary lines, labels, highlights, or angle/length annotations.\n"
+            "- HTML geometry drafts can embed that image with an <img> tag and a caption explaining its reasoning role; JSON geometry drafts can record that image in referenced_images with path and role.\n"
+            "- This follows the VisualSketchpad convention: use visual drawing when it helps, but later turns may answer without generating another image if the existing evidence is sufficient.\n"
             "- HTML drafts should visualize not-to-scale diagrams, labels, and theorem/equation panels; JSON drafts should encode those items as structured fields.\n"
         )
     if task_type == "math":
@@ -660,65 +612,51 @@ def build_draft_format_guidance(draft_format: str, task_type: str) -> str:
     if draft_format == "html":
         header = (
             "# INTERMEDIATE DRAFT FORMAT #:\n"
-            "For this task, keep the task type unchanged and use HTML as the intermediate draft format.\n"
-            "Whenever a non-trivial ACTION is needed, prefer Python code that writes or updates a self-contained HTML draft such as "
-            "`visual_draft_step_0.html`, then print:\n"
-            "- HTML_DRAFT_PATH: <path>\n"
-            "- HTML_DRAFT_SUMMARY: <short summary>\n"
-            "The HTML draft should make the current reasoning state inspectable through sections, tables, labels, diagrams, and inline SVG when useful.\n"
-            "You may still use the base prompt's matplotlib, networkx, or chess-rendering examples as helper code for auxiliary figures.\n"
-            "Do NOT stop at `display(image)` or a raw matplotlib figure as the intermediate representation.\n"
-            "If plotting helps, save the figure as a PNG and embed or reference it inside the HTML file you write, with a short caption about what the figure proves or highlights.\n"
-            "If you are ready to finish, give the final `ANSWER: ... TERMINATE` directly in normal text with no ACTION code block.\n"
-            "Do not print `ANSWER: ... TERMINATE` from Python unless execution output itself is the object being inspected.\n"
-            "Do not use placeholder answers such as `{answer}`, `{final_answer}`, `<answer>`, or `[answer]`; output the concrete final answer required by the task.\n"
-            "Use an ACTION pattern like this:\n"
+            "Use HTML as the dynamic visual draft format while keeping the original task objective unchanged.\n"
+            "Every non-final ACTION must write one valid `.html` draft and print exactly `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.\n"
+            "The HTML must contain html/head/body tags and visible sections labelled Thinking, Objects, Relations, State, Revision, Retained, Referenced Images.\n"
+            "Across turns, selectively keep, edit, or delete prior draft content. Reference 0, 1, or many images; generated overlays/diagrams must be saved and embedded or linked with a reasoning caption.\n"
+            "For geometry tasks, prefer generating an auxiliary-line or annotated diagram image in the first draft when it helps, matching the VisualSketchpad drawing convention.\n"
+            "If ready to finish, output `ANSWER: concrete_final_value TERMINATE` as plain text with no code block and no placeholder answer.\n"
+            "Minimal ACTION pattern:\n"
             "```python\n"
             "from pathlib import Path\n"
             "import html\n"
-            "# optional: generate diagram.png first, then reference it from HTML\n"
-            "doc = '''<!doctype html><html><head><meta charset=\"utf-8\"><title>Visual Draft</title></head><body>...</body></html>'''\n"
+            "doc = '''<!doctype html><html><head><meta charset=\"utf-8\"><title>Visual Draft</title></head><body><h1>Visual Draft</h1><section><h2>Thinking</h2></section><section><h2>Objects</h2></section><section><h2>Relations</h2></section><section><h2>State</h2></section><section><h2>Revision</h2></section><section><h2>Retained</h2></section><section><h2>Referenced Images</h2></section></body></html>'''\n"
             "path = Path('visual_draft_step_0.html')\n"
             "path.write_text(doc, encoding='utf-8')\n"
-            "print(f'HTML_DRAFT_PATH: {path}')\n"
-            "print('HTML_DRAFT_SUMMARY: concise summary here')\n"
+            "print(f\"HTML_DRAFT_PATH: {path}\")\n"
+            "print('HTML_DRAFT_SUMMARY: concise summary')\n"
             "```\n"
         )
     elif draft_format == "json":
         header = (
             "# INTERMEDIATE DRAFT FORMAT #:\n"
-            "For this task, keep the task type unchanged and use JSON as the intermediate draft format.\n"
-            "Whenever a non-trivial ACTION is needed, prefer Python code that writes or updates a valid JSON draft such as "
-            "`visual_draft_step_0.json`, then print:\n"
-            "- JSON_DRAFT_PATH: <path>\n"
-            "- JSON_DRAFT_SUMMARY: <short summary>\n"
-            "The JSON draft should capture the same reasoning content and section structure as an HTML draft, but encode the draft declaratively instead of rendering it.\n"
-            "You may still use the base prompt's matplotlib, networkx, or chess-rendering examples as helper code for auxiliary figures.\n"
-            "Do NOT stop at `display(image)` or a raw matplotlib figure as the intermediate representation.\n"
-            "If plotting helps, save the figure as a PNG and record the figure's role or file path inside the JSON draft instead of treating the image alone as the draft.\n"
-            "Inside the Python code block, the `JSON_DRAFT_PATH:` and `JSON_DRAFT_SUMMARY:` lines must be produced via print(...), not as bare text.\n"
-            "If you are ready to finish, give the final `ANSWER: ... TERMINATE` directly in normal text with no ACTION code block.\n"
-            "Do not print `ANSWER: ... TERMINATE` from Python unless execution output itself is the object being inspected.\n"
-            "Do not use placeholder answers such as `{answer}`, `{final_answer}`, `<answer>`, or `[answer]`; output the concrete final answer required by the task.\n"
-            "Use an ACTION pattern like this:\n"
+            "Use JSON as the dynamic declarative visual draft format while keeping the original task objective unchanged.\n"
+            "Every non-final ACTION must write one valid `.json` draft and print exactly `JSON_DRAFT_PATH: <path>` and `JSON_DRAFT_SUMMARY: <summary>`.\n"
+            "The JSON root must include: title, original_prompt, thinking_text, objects_entities, relations_constraints, state_effects_view, retained_context, referenced_images, open_issues_revision_targets.\n"
+            "Across turns, selectively keep, edit, or delete prior draft fields. Reference 0, 1, or many images; generated overlays/diagrams must be saved and recorded with their reasoning role.\n"
+            "For geometry tasks, prefer generating an auxiliary-line or annotated diagram image in the first draft when it helps, matching the VisualSketchpad drawing convention.\n"
+            "If ready to finish, output `ANSWER: concrete_final_value TERMINATE` as plain text with no code block and no placeholder answer.\n"
+            "Minimal ACTION pattern:\n"
             "```python\n"
             "from pathlib import Path\n"
             "import json\n"
             "draft = {\n"
             "    'title': 'Visual Draft',\n"
             "    'original_prompt': '...',\n"
-            "    'thinking_text': {'current_reasoning': '...'},\n"
+            "    'thinking_text': '...',\n"
             "    'objects_entities': [],\n"
-            "    'attributes': [],\n"
             "    'relations_constraints': [],\n"
-            "    'state_effects_view': {'current_state': [], 'derived_effects': []},\n"
-            "    'layout_visual_draft': {'regions': [], 'visual_marks': [], 'composition_notes': []},\n"
+            "    'state_effects_view': {},\n"
+            "    'retained_context': {'kept': [], 'changed': [], 'removed': []},\n"
+            "    'referenced_images': [],\n"
             "    'open_issues_revision_targets': []\n"
             "}\n"
             "path = Path('visual_draft_step_0.json')\n"
             "path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding='utf-8')\n"
-            "print(f'JSON_DRAFT_PATH: {path}')\n"
-            "print('JSON_DRAFT_SUMMARY: concise summary here')\n"
+            "print(f\"JSON_DRAFT_PATH: {path}\")\n"
+            "print('JSON_DRAFT_SUMMARY: concise summary')\n"
             "```\n"
         )
     else:
@@ -735,91 +673,13 @@ def _rewrite_legacy_prompt_for_draft_format(prompt: str, draft_format: str, task
     if draft_format not in {"html", "json"}:
         return prompt
 
-    mode = "HTML" if draft_format == "html" else "JSON"
-    replacement_lines = {
-        "html": {
-            "sketchpad": "# REPLACEMENT: generate figures when useful, but save them and reference them inside the HTML draft instead of stopping at standalone image display.",
-            "geometry": "Here are helper functions you may still use for geometry construction and auxiliary lines; save any resulting figure and embed/reference it from the HTML draft.",
-            "plot": "# - If plotting is useful, save the plot and embed/reference it from the HTML draft with a caption about its reasoning role.",
-            "display": "# display(image) may be used for quick inspection, but the intermediate artifact must still be an HTML draft that embeds/references the figure.",
-            "show": "# plt.show() may be used for quick inspection, but also save the figure and reference it from the HTML draft.",
-            "override_header": "\n# HTML OVERRIDE #:\n",
-            "override_body": (
-                "For this run, the intermediate artifact must be `visual_draft_step_<n>.html`.\n"
-                "If you need a figure, you may use matplotlib/networkx/chess rendering code, save the result as a local PNG, and embed it in the HTML via `<img src=\"...\">` with a short caption.\n"
-                "Do not use a raw displayed image as the final intermediate draft artifact.\n"
-            ),
-        },
-        "json": {
-            "sketchpad": "# REPLACEMENT: generate figures when useful, but save them and encode their role or file path inside the JSON draft instead of stopping at standalone image display.",
-            "geometry": "Here are helper functions you may still use for geometry construction and auxiliary lines; if they produce a figure, save it and record its role or file path in the JSON draft.",
-            "plot": "# - If plotting is useful, save the plot and describe its role or file path in the JSON draft.",
-            "display": "# display(image) may be used for quick inspection, but the intermediate artifact must still be a JSON draft.",
-            "show": "# plt.show() may be used for quick inspection, but also save the figure and record it inside JSON.",
-            "override_header": "\n# JSON OVERRIDE #:\n",
-            "override_body": (
-                "For this run, the intermediate artifact must be `visual_draft_step_<n>.json`.\n"
-                "If you need a figure, you may use matplotlib/networkx/chess rendering code, save the result as a local PNG, and store its role or file path inside the JSON draft.\n"
-                "Do not use a raw displayed image as the final intermediate draft artifact.\n"
-            ),
-        },
-    }[draft_format]
-
-    replacements = {
-        "You may need to use the tools above to generate the images and make decisions based on the visual outputs of the previous code blocks.": (
-            f"# LEGACY NOTE (COMMENTED OUT FOR {mode} DRAFT MODE): rely on standalone image display as the intermediate sketchpad.\n"
-            + replacement_lines["sketchpad"]
-        ),
-        "Here are some code examples you can use to draw auxiliary lines on the geometry images provided in matplotlib format.": (
-            f"# LEGACY NOTE (COMMENTED OUT FOR {mode} DRAFT MODE): raw matplotlib-only auxiliary-line sketches.\n"
-            + replacement_lines["geometry"]
-        ),
-        "- You can use matplotlib library to draw the math function and graph.": (
-            f"# - LEGACY MATPLOTLIB-ONLY EXAMPLE COMMENTED OUT FOR {mode} DRAFT MODE.\n"
-            + replacement_lines["plot"]
-        ),
-        "# Draw the graph": f"# LEGACY MATPLOTLIB DRAWING STEP COMMENTED OUT FOR {mode} DRAFT MODE",
-        "# Plot the function": f"# LEGACY MATPLOTLIB PLOTTING STEP COMMENTED OUT FOR {mode} DRAFT MODE",
-        "display(image)": replacement_lines["display"],
-        "plt.show()": replacement_lines["show"],
-        "8. For chess `winner_id` tasks, use text + Python code + HTML intermediate drafts. ACTION 0 must be a Python code block that writes a self-contained HTML file as the initial visual sketchpad before making any conclusion.": (
-            "8. For chess `winner_id` tasks, use text + Python code + "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " intermediate drafts. ACTION 0 must be a Python code block that writes a self-contained "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " file as the initial sketchpad before making any conclusion."
-        ),
-        "9. For chess `winner_id` tasks, each HTML draft must include the board rendered from the FEN, FEN text, side to move, terminal-status signals, legal-move summary, and a concise evidence section. The code must print `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.": (
-            "9. For chess `winner_id` tasks, each "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " draft must include the board derived from the FEN. For HTML, this can be a rendered board image or a symbolic board/table using chess piece symbols or text labels; for JSON, encode the same board state declaratively. Include FEN text, side to move, terminal-status signals, legal-move summary, and a concise evidence section. The code must print `"
-            + ("HTML_DRAFT_PATH" if draft_format == "html" else "JSON_DRAFT_PATH")
-            + ": <path>` and `"
-            + ("HTML_DRAFT_SUMMARY" if draft_format == "html" else "JSON_DRAFT_SUMMARY")
-            + ": <summary>`."
-        ),
-        "10. For chess `winner_id` tasks, after the initial HTML draft, every additional non-trivial action should, when feasible, write an updated HTML draft tied to the current reasoning step, such as check status, legal-move information, attacked-square overlays, material balance, king safety, or another board-centered visualization.": (
-            "10. For chess `winner_id` tasks, after the initial "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " draft, every additional non-trivial action should, when feasible, write an updated "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " draft tied to the current reasoning step, such as check status, legal-move information, attacked-square overlays, material balance, king safety, or another board-centered visualization."
-        ),
-        "11. For chess `winner_id` tasks, do not guess from the picture alone. After writing the HTML board draft, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the HTML draft before answering.": (
-            "11. For chess `winner_id` tasks, do not guess from the picture alone. After writing the "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " board draft, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the "
-            + ("HTML" if draft_format == "html" else "JSON")
-            + " draft before answering."
-        ),
-    }
-
-    for old, new in replacements.items():
-        prompt = prompt.replace(old, new)
-
-    if task_type in {"geo", "math"}:
-        prompt += replacement_lines["override_header"] + replacement_lines["override_body"]
-    return prompt
+    draft_label = "HTML" if draft_format == "html" else "JSON"
+    suffix = (
+        f"\n# {draft_label} DRAFT OVERRIDE #:\n"
+        f"Any previous examples that show raw `display(image)` or `plt.show()` are helper inspections only. "
+        f"The accepted intermediate artifact for this run is a valid dynamic {draft_label} draft file that passes the format contract below.\n"
+    )
+    return prompt + suffix
 
 
 class DraftFormatPromptWrapper:
@@ -857,6 +717,16 @@ class DraftFormatPromptWrapper:
         return (
             base_feedback
             + f"\nIf another intermediate step is needed, keep the next non-trivial ACTION in {draft_label} draft form."
+        )
+
+    def get_validation_feedback(self, validation_message: str, output: str) -> str:
+        draft_label = "HTML" if self.draft_format == "html" else "JSON"
+        return (
+            f"OBSERVATION: The previous code executed, but the {draft_label} draft failed validation.\n"
+            f"Validation message: {validation_message}\n"
+            f"Execution output:\n{output}\n"
+            f"Continue with REFLECTION, THOUGHT, and exactly one ACTION code block that writes a valid dynamic {draft_label} draft. "
+            "Keep useful prior content, remove stale content, and fix the reported format problem."
         )
 
 
@@ -911,17 +781,15 @@ from tools import *
 3. Treat the matplotlib coordinates as a schematic drawing by default. Do NOT use raw plotted coordinates, pixel distances, midpoint distances, or the distance formula on plotted points as true geometric lengths unless the problem explicitly states that it is a coordinate-geometry problem.
 4. If the symbolic givens from the diagram logic form disagree with the apparent plotted lengths, trust the symbolic givens and treat the drawing as not to scale.
 5. For trapezoids, circles, similar triangles, angle-chasing, and other standard Euclidean geometry problems, solve from the stated geometric relations first; use the drawing only to decide what auxiliary line or configuration to inspect.
-6. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
+6. If you think you got the answer, use ANSWER: concrete_final_value to provide the answer, and ends with TERMINATE.
 3. If the problem provides multiple-choice options, your FINAL ANSWER must include the choice letter only, such as ANSWER: (A). You may briefly justify it before the final answer, but the final answer itself must contain the option letter.
 4. Do not invent missing measurements. Only use lengths, angles, arcs, and radii explicitly given in the text, logic form, diagram code, or derived from valid geometry theorems.
 5. Do not treat a segment length like SU as an arc length unless the prompt explicitly says it is an arc length.
 6. Before using a formula, verify the object type: angle, arc, chord, side length, area, circumference, or radius.
 7. If the problem asks for auxiliary lines, propose them first; if no auxiliary line is needed, state that explicitly and solve using a valid theorem.
 8. Never use placeholder final answers such as {{answer}}, {{final_answer}}, <answer>, or [answer]. The final answer must use the concrete label, value, or token required by the task.
-8. For chess `winner_id` tasks, use text + Python code + HTML intermediate drafts. ACTION 0 must be a Python code block that writes a self-contained HTML file as the initial visual sketchpad before making any conclusion.
-9. For chess `winner_id` tasks, each HTML draft must include the board derived from the FEN. This can be a rendered board image or a symbolic board/table using chess piece symbols or text labels. Also include FEN text, side to move, terminal-status signals, legal-move summary, and a concise evidence section. The code must print `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.
-10. For chess `winner_id` tasks, after the initial HTML draft, every additional non-trivial action should, when feasible, write an updated HTML draft tied to the current reasoning step, such as check status, legal-move information, attacked-square overlays, material balance, king safety, or another board-centered visualization.
-11. For chess `winner_id` tasks, do not guess from the picture alone. After writing the HTML board draft, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the HTML draft before answering.
+9. For chess `winner_id` tasks, do not guess from the picture alone. Use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves.
+10. If this run specifies an HTML or JSON draft format, the chess board state, side to move, terminal-status signals, legal-move summary, and concise evidence must be stored in that required draft format before answering.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE: Solving a math convexity problem
@@ -961,7 +829,7 @@ display(image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.>
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: For any two points on the graph shown in the image, the line segment connecting them lies above or on the graph. Therefore, the function is convex 
 ACTION 1: No action needed.
 ANSWER: convex. TERMINATE
@@ -1003,7 +871,7 @@ display(image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.> 
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 ANSWER: yes, there is a path. TERMINATE
 
 
@@ -1077,7 +945,7 @@ print("HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is c
 OBSERVATION: Execution success. The output is as follows:
 HTML_DRAFT_PATH: visual_draft_step_0.html
 HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is checkmated.
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next REFLECTION, THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next REFLECTION, THOUGHT and ACTION.
 REFLECTION 1: The initial step was sufficient because the HTML draft contains both the board sketch and the decisive terminal-status evidence.
 THOUGHT 1: The HTML draft matches the FEN, and its rules table shows that Black is to move, Black is in check, and there are no legal moves. Therefore the position is checkmate and White is the winner.
 ACTION 1: No action needed.
@@ -1128,7 +996,7 @@ plt.show()
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.> yes, there is a path.
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: Based on the visual comparison of the two graphs, I can see that the sequence of degrees in both graphs are similar. Therefore, the two graphs are isomorphic.
 ACTION 1: No action needed.
 ANSWER: The two graphs are isomorphic. TERMINATE
@@ -1168,7 +1036,7 @@ display(image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.>
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: For the graph shown in the image, the function is symmetric with respect to the origin. Therefore, the function is odd.
 ACTION 1: No action needed.
 ANSWER: odd. TERMINATE
@@ -1216,7 +1084,7 @@ ANSWER: odd. TERMINATE
         }
         if self.subtask in final_answer_contract:
             prompt += f"# FINAL ANSWER FORMAT #: {final_answer_contract[self.subtask]}\n"
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -1240,7 +1108,7 @@ ANSWER: odd. TERMINATE
             prompt += (
                 "First provide REFLECTION on whether the previous reasoning/action was valid or needs correction, "
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
-                "ANSWER: <your answer> and ends with TERMINATE."
+                "ANSWER: concrete_final_value and ends with TERMINATE."
             )
             return prompt
     
@@ -1362,7 +1230,7 @@ from tools import find_perpendicular_intersection, find_parallel_intersection
 3. Treat the matplotlib coordinates as a schematic drawing by default. Do NOT use raw plotted coordinates, pixel distances, midpoint distances, or the distance formula on plotted points as true geometric lengths unless the problem explicitly states that it is a coordinate-geometry problem.
 4. If the symbolic givens from the diagram logic form disagree with the apparent plotted lengths, trust the symbolic givens and treat the drawing as not to scale.
 5. For trapezoids, circles, similar triangles, angle-chasing, and other standard Euclidean geometry problems, solve from the stated geometric relations first; use the drawing only to decide what auxiliary line or configuration to inspect.
-6. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
+6. If you think you got the answer, use ANSWER: concrete_final_value to provide the answer, and ends with TERMINATE.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE #:
@@ -1449,7 +1317,7 @@ plt.show()
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.> 
-If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: To solve X, we can ....
 ACTION 1: No action needed.
 ANSWER: (B). TERMINATE
@@ -1467,7 +1335,7 @@ ANSWER: (B). TERMINATE
         f"Below is the original matplotlib code of the geometry: {code}\nYou must draw auxiliary lines to solve the following question: [{question}]\n" + \
         "In THOUGHT 0, first list the relevant symbolic givens from the diagram logic form that you will use. Do not infer true lengths from the plotted coordinates unless the question is explicitly coordinate geometry. " + \
         "Propose matplotlib code to draw the auxiliary lines. Make sure to label the beginning and end point of the auxiliary line."
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -1490,7 +1358,7 @@ ANSWER: (B). TERMINATE
             prompt += (
                 "First provide REFLECTION on whether the previous reasoning/action was valid or needs correction, "
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
-                "ANSWER: <your answer> and ends with TERMINATE."
+                "ANSWER: concrete_final_value and ends with TERMINATE."
             )
             return prompt
     

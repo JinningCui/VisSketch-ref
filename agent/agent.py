@@ -1,6 +1,8 @@
 from mm_user_proxy_agent import MultimodalUserProxyAgent
 from autogen.agentchat import Agent
 from typing import Dict, Optional, Union
+from draft_validation import validate_draft_output
+from utils import extract_answer_text, content_to_text
 
 class SketchpadUserAgent(MultimodalUserProxyAgent):
     
@@ -21,13 +23,11 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
         return self._consecutive_auto_reply_counter[sender.name] >= self._max_consecutive_auto_reply
 
     def _contains_terminate(self, message: Union[Dict, str]) -> bool:
-        if self._is_termination_msg(message):
-            return True
         if isinstance(message, dict):
-            content = message.get("content", "")
+            content = content_to_text(message.get("content", ""))
         else:
-            content = message
-        return isinstance(content, str) and "ANSWER:" in content and "TERMINATE" in content
+            content = str(message)
+        return extract_answer_text(content) is not None
 
     def receive(
         self,
@@ -90,8 +90,23 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
                 
             # if execution succeeds
             else:
-                if self._contains_terminate(message) or ("ANSWER:" in output and "TERMINATE" in output):
+                if self._contains_terminate(message):
                     self._consecutive_auto_reply_counter[sender.name] = 0
+                    return
+                draft_format = getattr(self.prompt_generator, "draft_format", None)
+                validation = validate_draft_output(
+                    output,
+                    self.executor.working_dir,
+                    draft_format,
+                )
+                if not validation.ok:
+                    if self.sender_hits_max_reply(sender):
+                        self._consecutive_auto_reply_counter[sender.name] = 0
+                        return
+                    self._consecutive_auto_reply_counter[sender.name] += 1
+                    reply = self.prompt_generator.get_validation_feedback(validation.message, output)
+                    self.feedback_types.append("validation")
+                    self.send(reply, sender, request_reply=True)
                     return
                 self.send(reply, sender, request_reply=True)
                 self._consecutive_auto_reply_counter[sender.name] = 0

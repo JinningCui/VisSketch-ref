@@ -203,6 +203,7 @@ def run_agent(
         
     
     # save the results
+    os.makedirs(task_directory, exist_ok=True)
     structured_trace = build_structured_trace(all_messages)
     with open(os.path.join(task_directory, "output.json"), "w") as f:
         json.dump(all_messages, f, indent=4, default=custom_encoder)
