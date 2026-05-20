@@ -311,6 +311,7 @@ Generated or referenced files from latest execution:
             f"Memory path: {Path(record['path']).name}\n"
             f"Memory summary: {record['summary']}\n"
             "Use this external memory as mutable state for the next step. It is not a final answer.\n"
+            "Before the next action, explicitly check the dynamic memory and state what retained evidence or open issue you are using.\n"
             "Memory artifact content follows:\n"
             f"{payload}\n"
         )
