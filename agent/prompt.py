@@ -794,47 +794,31 @@ from tools import *
 8. Never use placeholder final answers such as {{answer}}, {{final_answer}}, <answer>, or [answer]. The final answer must use the concrete label, value, or token required by the task.
 9. For chess `winner_id` tasks, do not guess from the picture alone. Use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves.
 10. If this run specifies an HTML or JSON draft format, the chess board state, side to move, terminal-status signals, legal-move summary, and concise evidence must be stored in that required draft format before answering.
+11. For pure math function tasks (`math_convexity`, `math_parity`, `math_breakpoint`), do not default to plotting. First solve symbolically or algebraically using function rules, derivatives, simplification, or direct substitution checks. Use plots only as optional debugging or supporting evidence when symbolic analysis is ambiguous.
+12. For convexity on x > 0: `log(x)` is concave, `-log(x)` is convex, `exp(a*x)` is convex for nonzero `a`, a negative coefficient times a convex function is concave, `Abs(x)` is convex, `-Abs(x)` is concave, and linear terms are both convex and concave. Plots are not proof.
+13. For parity: compare `f(-x)` with `f(x)` and `-f(x)` algebraically. Even powers and `Abs(x)` are even; odd powers are odd; sums of only even terms are even, sums of only odd terms are odd, and mixtures are usually neither. Use Python/SymPy simplification before relying on a graph.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE: Solving a math convexity problem
 # USER REQUEST #: You are given a real-valued, scalar function f(x). YOUR TASK is to determine whether f(x) is an convex function or concave function.\nDefinition of a convex function: A function such that for all x, y, and 0 <= t <= 1\nf (tx + (1 − t)y) ≤ t f (x) + (1 − t) f (y)\nDefinition of a concave function: A function such that for all x, y, and 0 <= t <= 1\nf (tx + (1 − t)y) ≥ t f (x) + (1 − t) f (y)\nHere is the expression of f(x), defined for all x>0. Here is the expression of f(x): f(x) = 2.23*Abs(x) + 6.64\nRespond with 'convex' or 'concave' on whether the function f (x) is convex or concave, based on the definitions and your observation of the function.
 # RESULT #:
-THOUGHT 0: I will plot the function f(x) = 2.23*Abs(x) + 6.64 to visualize the function.
+THOUGHT 0: This is a pure function convexity task, so I will solve it symbolically rather than relying on a plot. On the domain x > 0, Abs(x) = x, so f(x) = 2.23*x + 6.64 is linear. A linear function satisfies the convex inequality; when the task requires choosing one of convex or concave for this expression, the positive absolute-value term supports classifying it as convex.
 ACTION 0:
 ```python
-import numpy as np
-import matplotlib.pyplot as plt
-from io import BytesIO
+import sympy as sp
 
-# Define the function f(x)
-def f(x):
-    return 2.23 * np.abs(x) + 6.64
-
-# Generate x values from -10 to 10
-x = np.linspace(-10, 10, 400)
-
-# Compute y values using the function
-y = f(x)
-
-# Create the plot
-plt.figure(figsize=(8, 6))
-plt.plot(x, y, label='f(x) = 2.23*|x| + 6.64')
-plt.title('Plot of the function f(x) = 2.23*|x| + 6.64')
-
-# Save the plot to a buffer
-buf = BytesIO()
-plt.savefig(buf, format='png')
-plt.close()
-
-# Load image from buffer
-buf.seek(0)
-image = Image.open(buf)
-display(image)
+x = sp.symbols("x", positive=True)
+f = 2.23 * sp.Abs(x) + 6.64
+simplified = sp.simplify(f)
+second_derivative = sp.diff(simplified, x, 2)
+print("simplified:", simplified)
+print("second_derivative:", second_derivative)
 ```
 OBSERVATION: Execution success. The output is as follows:
-<the image outputs of the previous code is here.>
+simplified: 2.23*x + 6.64
+second_derivative: 0
 If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
-THOUGHT 1: For any two points on the graph shown in the image, the line segment connecting them lies above or on the graph. Therefore, the function is convex 
+THOUGHT 1: The function simplifies to a linear function on x > 0. Linear functions satisfy the convex inequality, and the positive Abs coefficient is consistent with convexity.
 ACTION 1: No action needed.
 ANSWER: convex. TERMINATE
 
@@ -1008,40 +992,21 @@ ANSWER: The two graphs are isomorphic. TERMINATE
 # EXAMPLE: Solving a math parity problem
 # USER REQUEST #: You are given a real-valued, scalar function f (x). YOUR TASK is to determine whether f(x) is an even function, an odd function, or neither.\nDefinition of an odd function: A function such that\nf(−x) = −f(x)\nwhere the sign is reversed but the absolute value remains the same if the sign of the independent variable is reversed.\nA function is neither even nor odd if it does not satisfy either condition. Here is the expression of f(x): f(x) = x*(6.0 - 16.0*x**2)/(8.0*x**10 + 6.0*x**4 + 4.28)\nRespond with 'even', 'odd', 'neither' first on whether the function f(x) is even, odd, or neither, based on the definitions and your observation of the function.
 # RESULT #:
-THOUGHT 0: I will plot the function f(x) = x*(6.0 - 16.0*x**2)/(8.0*x**10 + 6.0*x**4 + 4.28) to visualize the function.
+THOUGHT 0: This is a pure parity task, so I will compare f(-x) with f(x) and -f(x) algebraically instead of relying on a plot. The numerator is x times an even polynomial, so it is odd; the denominator is an even polynomial; odd divided by even is odd when the denominator is nonzero.
 ACTION 0:
 ```python
-import numpy as np
-import matplotlib.pyplot as plt
-from io import BytesIO
+import sympy as sp
 
-# Define the function
-def f(x):
-    return x * (6.0 - 16.0 * x**2) / (8.0 * x**10 + 6.0 * x**4 + 4.28)
-
-# Generate x values
-x = np.linspace(-10, 10, 400)
-# Calculate y values
-y = f(x)
-
-# Plot the function
-plt.plot(x, y)
-plt.title('Plot of f(x) = x*(6.0 - 16.0*x**2)/(8.0*x**10 + 6.0*x**4 + 4.28)')
-
-# Save the plot to a buffer
-buf = BytesIO()
-plt.savefig(buf, format='png')
-plt.close()
-
-# Load image from buffer
-buf.seek(0)
-image = Image.open(buf)
-display(image)
+x = sp.symbols("x")
+f = x * (6.0 - 16.0*x**2) / (8.0*x**10 + 6.0*x**4 + 4.28)
+print("f(-x) - f(x):", sp.simplify(f.subs(x, -x) - f))
+print("f(-x) + f(x):", sp.simplify(f.subs(x, -x) + f))
 ```
 OBSERVATION: Execution success. The output is as follows:
-<the image outputs of the previous code is here.>
+f(-x) - f(x): -2*x*(16.0*x**2 - 6.0)/(8.0*x**10 + 6.0*x**4 + 4.28)
+f(-x) + f(x): 0
 If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
-THOUGHT 1: For the graph shown in the image, the function is symmetric with respect to the origin. Therefore, the function is odd.
+THOUGHT 1: Since f(-x) + f(x) simplifies to 0, f(-x) = -f(x). Therefore, the function is odd.
 ACTION 1: No action needed.
 ANSWER: odd. TERMINATE
 """
