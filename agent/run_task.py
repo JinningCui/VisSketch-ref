@@ -148,9 +148,19 @@ def main():
         type=str,
         default=None,
         choices=["html", "json"],
-        help="Optional intermediate draft format for standard task types.",
+        help="Backward-compatible alias for --memory-format html/json.",
+    )
+    parser.add_argument(
+        "--memory-format",
+        type=str,
+        default=None,
+        choices=["html", "json", "image"],
+        help="Optional external dynamic memory format maintained by a separate memory agent.",
     )
     args = parser.parse_args()
+    memory_format = args.memory_format or args.draft_format
+    if args.memory_format and args.draft_format and args.memory_format != args.draft_format:
+        raise ValueError("--memory-format and --draft-format cannot specify different formats.")
 
     task_names = resolve_tasks(args.task)
     runtime_kwargs = {
@@ -162,10 +172,11 @@ def main():
         "local_dtype": args.local_dtype,
         "device_map": args.device_map,
         "draft_format": args.draft_format,
+        "memory_format": memory_format,
     }
     scoped_output_root = get_runtime_output_root(args.output_dir, runtime_kwargs=runtime_kwargs)
-    if args.draft_format:
-        scoped_output_root = scoped_output_root / f"draft_{args.draft_format}"
+    if memory_format:
+        scoped_output_root = scoped_output_root / f"memory_{memory_format}"
     summaries = run_tasks(
         task_names,
         str(scoped_output_root),

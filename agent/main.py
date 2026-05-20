@@ -10,12 +10,12 @@ from prompt import (
     GeoPrompt,
     HTMLVisualPrompt,
     JSONVisualPrompt,
-    DraftFormatPromptWrapper,
     python_codes_for_images_reading,
     MULTIMODAL_ASSISTANT_MESSAGE,
     HTML_VISUAL_ASSISTANT_MESSAGE,
     JSON_VISUAL_ASSISTANT_MESSAGE,
 )
+from memory_agent import MemoryOrganizerAgent
 from parse import Parser
 from execution import CodeExecutor
 from reflection import build_memory_prompt, reflect_and_update_memory
@@ -33,17 +33,7 @@ def checks_terminate_message(msg):
         raise NotImplementedError
 
 
-def _wrap_prompt_generator(prompt_generator, task_type, draft_format):
-    if draft_format is None:
-        return prompt_generator
-    return DraftFormatPromptWrapper(prompt_generator, task_type=task_type, draft_format=draft_format)
-
-
-def _resolve_system_message(task_type, draft_format):
-    if draft_format == "html":
-        return HTML_VISUAL_ASSISTANT_MESSAGE
-    if draft_format == "json":
-        return JSON_VISUAL_ASSISTANT_MESSAGE
+def _resolve_system_message(task_type):
     if task_type == "t2i_html":
         return HTML_VISUAL_ASSISTANT_MESSAGE
     if task_type == "t2i_json":
@@ -56,6 +46,7 @@ def run_agent(
     output_dir,
     task_type="vision",
     draft_format=None,
+    memory_format=None,
     task_name=None,
     backend=None,
     model=None,
@@ -71,13 +62,17 @@ def run_agent(
         task_input (str): a path to the task input directory
         output_dir (str): a path to the directory where the output will be saved
         task_type (str): Task type. Should be vision, math, geo, t2i_html, or t2i_json. Defaults to "vision".
-        draft_format (str, optional): Intermediate draft format for standard tasks. One of None, "html", or "json".
+        draft_format (str, optional): Backward-compatible alias for memory_format.
+        memory_format (str, optional): External dynamic memory format. One of None, "html", "json", or "image".
         task_name (str, optional): Only needed for math tasks. Defaults to None.
     """
     
     # task type should be one of "vision", "math", "geo", "t2i_html", "t2i_json"
     assert task_type in ["vision", "math", "geo", "t2i_html", "t2i_json"]
+    if memory_format is None and draft_format is not None:
+        memory_format = draft_format
     assert draft_format in [None, "html", "json"]
+    assert memory_format in [None, "html", "json", "image"]
     
     # create a directory for the task
     task_input = task_input.rstrip('/')
@@ -100,7 +95,7 @@ def run_agent(
         query = task_metadata['query']
         images = task_metadata['images']
     
-        prompt_generator = _wrap_prompt_generator(ReACTPrompt(), task_type="vision", draft_format=draft_format)
+        prompt_generator = ReACTPrompt()
         parser = Parser()
         executor = CodeExecutor(working_dir=task_directory, use_vision_tools=True)
         
@@ -113,14 +108,14 @@ def run_agent(
     elif task_type == "math":
         query = json.load(open(os.path.join(task_input, "example.json")))
         images = []
-        prompt_generator = _wrap_prompt_generator(MathPrompt(task_name), task_type="math", draft_format=draft_format)
+        prompt_generator = MathPrompt(task_name)
         parser = Parser()
         executor = CodeExecutor(working_dir=task_directory)
         
     elif task_type == "geo":
         query = json.load(open(os.path.join(task_input, "ex.json")))
         images = []
-        prompt_generator = _wrap_prompt_generator(GeoPrompt(), task_type="geo", draft_format=draft_format)
+        prompt_generator = GeoPrompt()
         parser = Parser()
         executor = CodeExecutor(working_dir=task_directory)
 
@@ -170,7 +165,8 @@ def run_agent(
         is_termination_msg=checks_terminate_message,
         prompt_generator = prompt_generator,
         parser = parser,
-        executor = executor
+        executor = executor,
+        memory_agent=MemoryOrganizerAgent(memory_format, llm_runtime.client, task_directory),
     )
     
     # running the planning experiment
@@ -181,7 +177,7 @@ def run_agent(
         human_input_mode='NEVER',
         max_consecutive_auto_reply=MAX_REPLY,
         is_termination_msg = lambda x: False,
-        system_message=_resolve_system_message(task_type, draft_format) + build_memory_prompt(task_name),
+        system_message=_resolve_system_message(task_type) + build_memory_prompt(task_name),
         llm_config=False if llm_runtime.client is not None else None,
         llm_client=llm_runtime.client,
     )
@@ -219,6 +215,7 @@ def run_agent(
         {
             "task_type": task_type,
             "draft_format": draft_format,
+            "memory_format": memory_format,
             "task_name": task_name,
             "task_input": task_input,
             "final_answer": structured_trace.get("final_answer"),

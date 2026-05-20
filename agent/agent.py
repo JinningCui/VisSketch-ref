@@ -1,7 +1,6 @@
 from mm_user_proxy_agent import MultimodalUserProxyAgent
 from autogen.agentchat import Agent
 from typing import Dict, Optional, Union
-from draft_validation import validate_draft_output
 from utils import extract_answer_text, content_to_text
 
 class SketchpadUserAgent(MultimodalUserProxyAgent):
@@ -12,12 +11,15 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
         prompt_generator, 
         parser,
         executor,
+        memory_agent=None,
         **config,
     ):
         super().__init__(name=name, **config)
         self.prompt_generator = prompt_generator
         self.parser = parser
         self.executor = executor
+        self.memory_agent = memory_agent
+        self.current_task_prompt = ""
         
     def sender_hits_max_reply(self, sender: Agent):
         return self._consecutive_auto_reply_counter[sender.name] >= self._max_consecutive_auto_reply
@@ -28,6 +30,25 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
         else:
             content = str(message)
         return extract_answer_text(content) is not None
+
+    def _append_memory_feedback(
+        self,
+        reply: str,
+        message: Union[Dict, str],
+        observation_text: str,
+        file_paths=None,
+        stage: str = "execution",
+    ) -> str:
+        if self.memory_agent is None or not self.memory_agent.enabled:
+            return reply
+        record = self.memory_agent.update(
+            task_prompt=self.current_task_prompt,
+            assistant_message=message,
+            observation_text=observation_text,
+            generated_files=file_paths or [],
+            stage=stage,
+        )
+        return reply + self.memory_agent.format_feedback(record)
 
     def receive(
         self,
@@ -67,6 +88,12 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
             # send the feedback message, and request a reply
             self._consecutive_auto_reply_counter[sender.name] += 1
             reply = self.prompt_generator.get_parsing_feedback(parsed_error_message, parsed_error_code)
+            reply = self._append_memory_feedback(
+                reply,
+                message,
+                reply,
+                stage="parsing_error",
+            )
             self.feedback_types.append("parsing")
             self.send(reply, sender, request_reply=True)
             return
@@ -85,29 +112,35 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
                     return
                 
                 self._consecutive_auto_reply_counter[sender.name] += 1
+                reply = self._append_memory_feedback(
+                    reply,
+                    message,
+                    reply,
+                    file_paths=file_paths,
+                    stage="execution_error",
+                )
                 self.send(reply, sender, request_reply=True)
                 return
                 
             # if execution succeeds
             else:
                 if self._contains_terminate(message):
+                    self._append_memory_feedback(
+                        "",
+                        message,
+                        output,
+                        file_paths=file_paths,
+                        stage="final",
+                    )
                     self._consecutive_auto_reply_counter[sender.name] = 0
                     return
-                draft_format = getattr(self.prompt_generator, "draft_format", None)
-                validation = validate_draft_output(
+                reply = self._append_memory_feedback(
+                    reply,
+                    message,
                     output,
-                    self.executor.working_dir,
-                    draft_format,
+                    file_paths=file_paths,
+                    stage="execution_success",
                 )
-                if not validation.ok:
-                    if self.sender_hits_max_reply(sender):
-                        self._consecutive_auto_reply_counter[sender.name] = 0
-                        return
-                    self._consecutive_auto_reply_counter[sender.name] += 1
-                    reply = self.prompt_generator.get_validation_feedback(validation.message, output)
-                    self.feedback_types.append("validation")
-                    self.send(reply, sender, request_reply=True)
-                    return
                 self.send(reply, sender, request_reply=True)
                 self._consecutive_auto_reply_counter[sender.name] = 0
                 return
@@ -120,6 +153,7 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
         self.current_task_id = task_id
         self.feedback_types = []
         initial_message = self.generate_init_message(message, n_image)
+        self.current_task_prompt = content_to_text(initial_message)
         if log_prompt_only:
             print(initial_message)
         else:

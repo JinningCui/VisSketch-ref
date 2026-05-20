@@ -1,22 +1,23 @@
 # html-sketch-main Task Execution README
 
-This project extends the VisualSketchpad-style ReACT + Jupyter loop to compare intermediate visual draft formats for multimodal reasoning:
+This project follows the VisualSketchpad-style ReACT + Jupyter loop, with an added dynamic memory agent for comparing memory organizations:
 
-- `image`: a pure visual sketch baseline, typically generated or displayed by Python/Jupyter.
-- `html`: a dynamic HTML visual draft that can organize text, structure, and one or more evidence images.
-- `json`: a dynamic declarative JSON draft that can organize the same evidence in machine-readable fields.
+- `image`: a single linear visual memory image.
+- `html`: an inspectable HTML memory page that can organize text, structure, and evidence images.
+- `json`: a structured JSON memory object.
 
-The core execution loop remains close to `VisualSketchpad-main`: an LLM planner writes Python actions, the user proxy executes them in Jupyter, and observations are fed back until the planner returns `ANSWER: ... TERMINATE`.
+The task-solving reasoner is kept close to the original VisualSketchpad behavior. It still writes Python actions, receives Jupyter observations, and eventually returns `ANSWER: ... TERMINATE`. HTML/JSON are no longer forced into the reasoner's action format.
 
 ## Core Idea
 
-HTML and JSON do not create independent visual evidence by themselves. Images are still produced or transformed by Python in the Jupyter executor:
+The experiment treats the visible multimodal reasoning process as dynamic external memory. A separate Memory Organizer Agent observes each visible step and maintains a memory artifact. The reasoner can use this artifact on later turns, but the reasoner is not required to write HTML or JSON itself.
 
-- input images loaded as `image_1`, `image_2`, ...
-- derived crops, overlays, auxiliary lines, graph renderings, function plots, or chess boards saved by Python
-- optional vision-tool outputs such as detection, segmentation, and depth maps
+This separates two variables:
 
-HTML/JSON then reference and organize these evidence images. This lets the experiment test whether a richer draft representation improves reasoning compared with pure image sketches.
+- the task-solving prompt and tool loop
+- the external memory representation
+
+That makes the comparison between HTML, JSON, and image memory cleaner than rewriting the solver prompt with an HTML/JSON draft contract.
 
 ## Execution Flow
 
@@ -26,22 +27,16 @@ Task input
   v
 run_agent(...)
   |
-  |-- select task prompt
+  |-- select original task prompt
   |     vision -> ReACTPrompt
-  |     math   -> MathPrompt
+  |     math   -> MathPrompt(task_name)
   |     geo    -> GeoPrompt
-  |     t2i_html -> HTMLVisualPrompt
-  |     t2i_json -> JSONVisualPrompt
-  |
-  |-- optional draft wrapper
-  |     --draft-format html -> dynamic HTML contract
-  |     --draft-format json -> dynamic JSON contract
   |
   v
-Planner LLM
+Reasoner LLM
   |
   |  writes REFLECTION / THOUGHT / ACTION
-  |  ACTION must contain exactly one ```python code block
+  |  ACTION contains exactly one ```python code block unless final answer
   v
 Parser
   |
@@ -51,17 +46,17 @@ Parser
 Jupyter CodeExecutor
   |
   |-- executes Python in the task working directory
-  |-- can generate images, HTML files, JSON files, plots, overlays
+  |-- can generate images, plots, overlays, HTML, JSON, or text outputs
   v
-Draft validation
+Memory Organizer Agent
   |
-  |-- html mode: checks printed HTML_DRAFT_PATH and required HTML sections
-  |-- json mode: checks printed JSON_DRAFT_PATH and required JSON keys
-  |-- failure becomes feedback for the next loop
+  |-- reads visible assistant message, observation, generated files, and previous memory
+  |-- writes memory_step_000.html / .json / .png
+  |-- appends the memory artifact back to the next reasoner observation
   v
-Observation to Planner
+Reasoner continues
   |
-  |-- planner revises draft or answers
+  |-- uses task prompt, execution observation, and dynamic memory
   v
 Final answer extraction
   |
@@ -74,103 +69,76 @@ Saved outputs
 
 ## Important Files
 
-- `agent/main.py`: entrypoint for `run_agent`; selects task type, prompt, executor, and output saving.
-- `agent/prompt.py`: prompt definitions for vision, math, geometry, HTML drafts, JSON drafts, and draft-format wrappers.
-- `agent/agent.py`: `SketchpadUserAgent`; receives planner messages, parses code, executes code, validates drafts, and sends observations.
+- `agent/main.py`: entrypoint for `run_agent`; selects task prompt, executor, memory agent, and output saving.
+- `agent/agent.py`: `SketchpadUserAgent`; parses code, executes code, calls the memory agent, and sends observations.
+- `agent/memory_agent.py`: maintains external HTML/JSON/image memory artifacts.
+- `agent/prompt.py`: original task prompts and legacy draft prompt classes.
 - `agent/parse.py`: extracts exactly one executable Python block.
 - `agent/execution.py`: Jupyter-backed Python execution environment.
-- `agent/draft_validation.py`: validates HTML/JSON draft files after execution.
 - `agent/utils.py`: structured trace construction and final answer extraction.
 - `agent/run_task.py`: batch runner for benchmark tasks.
 - `agent/evaluate_tasks.py`: normalizes and evaluates final answers.
 
-## Draft Modes
+## Memory Modes
 
-### Original VisualSketchpad-style mode
-
-Without `--draft-format`, the agent follows the base task prompt. It can use Python/Jupyter to display or save visual sketches, plots, crops, overlays, and tool outputs.
-
-This is closest to the original VisualSketchpad behavior.
-
-### HTML draft mode
-
-Run standard tasks with:
+Run with the new argument:
 
 ```bash
 cd agent
-python run_task.py --task geometry --draft-format html
+python run_task.py --task geometry --memory-format html
 ```
 
-Each non-final action must write a valid `.html` file and print:
+The old `--draft-format html/json` flag is kept as a backward-compatible alias for `--memory-format html/json`, but it no longer wraps or rewrites the reasoner's prompt.
+
+Outputs are written under:
 
 ```text
-HTML_DRAFT_PATH: <path>
-HTML_DRAFT_SUMMARY: <summary>
+outputs/.../memory_html
+outputs/.../memory_json
+outputs/.../memory_image
 ```
 
-The HTML draft must contain visible sections labelled:
-
-- Thinking
-- Objects
-- Relations
-- State
-- Revision
-- Retained
-- Referenced Images
-
-HTML is intended to be the strongest visual draft format. It can organize text, tables, diagrams, inline SVG, board states, charts, and multiple evidence images in one inspectable workspace.
-
-### JSON draft mode
-
-Run standard tasks with:
-
-```bash
-cd agent
-python run_task.py --task graph_maxflow --draft-format json
-```
-
-Each non-final action must write a valid `.json` file and print:
+Each task instance also contains:
 
 ```text
-JSON_DRAFT_PATH: <path>
-JSON_DRAFT_SUMMARY: <summary>
+memory_step_000.html/json/png
+memory_step_001.html/json/png
+memory_index.json
 ```
 
-The JSON root must include:
+### HTML Memory
 
-- `title`
-- `original_prompt`
-- `thinking_text`
-- `objects_entities`
+HTML memory is intended to be the richest dynamic memory format. It can organize:
+
+- task state
+- objects and variables
+- relations and constraints
+- derived facts
+- generated images and captions
+- revision history
+- open issues
+- next-action hints
+
+The reasoner receives the HTML memory source and any image references embedded in it as part of the next observation.
+
+### JSON Memory
+
+JSON memory stores similar content in machine-readable fields:
+
+- `objects_variables`
 - `relations_constraints`
-- `state_effects_view`
-- `retained_context`
-- `referenced_images`
-- `open_issues_revision_targets`
+- `derived_facts`
+- `retained_state`
+- `revisions`
+- `open_issues`
+- `next_action_hints`
+- `evidence_files`
 
-JSON is intended to be a structured, machine-readable visual draft. It is weaker than HTML for direct visual layout, but better for parsing, automatic checks, and analysis.
+This is useful for symbolic and graph-like tasks, where strict fields can reduce ambiguity.
 
-## Dynamic Draft Memory
+### Image Memory
 
-HTML/JSON drafts are treated as mutable memory across reasoning turns.
-
-On each loop, the model should:
-
-- keep useful content from the previous draft
-- correct wrong content
-- delete stale or irrelevant details
-- add new evidence
-- decide how many evidence images to reference, including zero, one, or many
-
-Evidence images should come from the same task context and Jupyter toolchain, such as:
-
-- original input image
-- crop or zoomed region
-- bounding-box or segmentation overlay
-- auxiliary-line geometry sketch
-- graph drawing or residual graph
-- function plot
-- chess board rendering
+Image memory renders a single linear PNG summary board. It is a useful baseline for comparing against VisualSketchpad-style image-only memory, but it is weaker at preserving structured, revisable state.
 
 ## Answer Format
 
@@ -183,7 +151,7 @@ ANSWER: concrete_final_value TERMINATE
 The extraction logic:
 
 - ignores anything inside code blocks
-- accepts only real answer text after `ANSWER:`
+- requires both `ANSWER:` and `TERMINATE`
 - filters placeholders such as `{answer}`, `<answer>`, `[answer]`, `final reasoning result`, and `concrete_final_value`
 
 Task-specific prompts further constrain final answers, for example:
@@ -191,33 +159,20 @@ Task-specific prompts further constrain final answers, for example:
 - `winner_id`: `white`, `black`, or `draw`
 - `graph_isomorphism`: `true` or `false`
 - `graph_connectivity`: starts with `yes` or `no`
+- `graph_maxflow`: a concrete maximum-flow value
 - `math_convexity`: `convex` or `concave`
 - `math_parity`: `even`, `odd`, or `neither`
 
-## Suitable Task Types
-
-This setup is most useful for tasks where intermediate visual state can be inspected or revised:
-
-- geometry reasoning
-- graph connectivity and maximum flow
-- mathematical function properties
-- chess or other board games
-- real-scene image QA
-- counting with detection/crop/overlay evidence
-
-For real-scene QA and counting, HTML/JSON should not replace visual perception. They should organize evidence from original images, crops, detections, segmentations, and uncertainty notes.
-
 ## Experimental Notes
 
-For fair comparison between image, HTML, and JSON draft formats, keep these variables aligned:
+For fair comparison between image, HTML, and JSON memory formats, keep these variables aligned:
 
 - same model
 - same task set
 - same max turns
 - same Python/Jupyter tools
 - same vision-tool availability
-- same image-generation or evidence-image budget, if measuring cost-sensitive performance
+- same memory update schedule
 - same final answer normalization and evaluation
 
-HTML/JSON may organize multiple evidence images. This is a real representational advantage, not necessarily a confound, as long as the same evidence-generation tools and budget are available across conditions.
-
+HTML memory should be expected to help most on multimodal tasks that require preserving heterogeneous evidence: geometry diagrams, generated auxiliary-line images, real-scene QA, counting with crops/detections, board states, and multi-image evidence. JSON may remain stronger on purely symbolic graph tasks.
