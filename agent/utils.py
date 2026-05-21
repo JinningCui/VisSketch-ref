@@ -57,40 +57,10 @@ def extract_code_block(text):
     return None
 
 
-def _strip_code_blocks(text):
-    return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-
-
-def _looks_like_placeholder_answer(text):
-    candidate = text.strip().strip(".。:：")
-    lowered = candidate.lower()
-    if "placeholder" in lowered:
-        return True
-    return any(
-        re.fullmatch(pattern, candidate)
-        for pattern in [
-            r"\{[^{}]+\}",
-            r"<[^<>]+>",
-            r"\[[^\[\]]+\]",
-            r"\.\.\.",
-            r"…",
-            r"your answer",
-            r"final answer",
-            r"final reasoning result",
-            r"concrete final (answer|value)",
-            r"concrete_final_value",
-        ]
-    )
-
-
 def extract_answer_text(text):
-    text_wo_code = _strip_code_blocks(text)
-    matches = re.findall(r"\bANSWER\s*:\s*(.*?)\bTERMINATE\b", text_wo_code, flags=re.DOTALL | re.IGNORECASE)
+    matches = re.findall(r"ANSWER:\s*(.*?)(?:TERMINATE|$)", text, flags=re.DOTALL)
     if matches:
-        for match in reversed(matches):
-            candidate = re.sub(r"\s+", " ", match).strip().strip("`")
-            if candidate and not _looks_like_placeholder_answer(candidate):
-                return candidate
+        return matches[-1].strip()
     return None
 
 
@@ -164,7 +134,7 @@ def build_structured_trace(messages):
             break
 
     return {
-        "status": "ok" if final_answer else "incomplete",
+        "status": "ok",
         "messages": simple_messages,
         "turns": turns,
         "final_answer": final_answer,

@@ -19,62 +19,34 @@ If the result indicates there is an error, fix the error and output the code aga
 
 For each turn after the first one, you should first do a "REFLECTION" on whether your previous reasoning or action was flawed, what the concrete issue is, and how to correct it. Then do a "THOUGHT", based on the images and text you see.
 Your reflection must be concise and operational. If the previous step looks sound, say so briefly and explain why you are continuing.
-If you think you get the answer to the intial user request, you can reply with "ANSWER: concrete_final_value" and ends with "TERMINATE".
+If you think you get the answer to the intial user request, you can reply with "ANSWER: <your answer>" and ends with "TERMINATE".
 """
 
-HTML_VISUAL_ASSISTANT_MESSAGE = """You are a structured reasoning planner.
-Use HTML as a dynamic visual draft: each non-final ACTION writes one valid self-contained HTML file.
+HTML_VISUAL_ASSISTANT_MESSAGE = """You are a structured-vision reasoning planner for text-to-image prompts.
+Your job is to reason through a prompt using HTML visual drafts instead of generated images or JSON.
 You are coding in a Python jupyter notebook environment. Each ACTION must be one executable ```python``` block unless you are giving the final ANSWER.
-Do not output JSON as the draft format.
+Do not generate intermediate images. Do not output JSON as the visual draft format.
 
 For each non-final turn:
 1. Start with REFLECTION. On the first turn, say this is the initial planning step.
 2. Then write THOUGHT with the current reasoning.
 3. Then write ACTION with Python code that writes a self-contained HTML file in the current working directory.
 
-HTML draft contract:
-- Valid UTF-8 HTML containing html/head/body tags.
-- Include visible sections whose labels contain: Thinking, Objects, Relations, State, Revision, Retained, Referenced Images.
-- Treat the draft as mutable memory: preserve only useful prior content, edit wrong content, delete stale content.
-- You may reference 0, 1, or many images. If Python draws auxiliary lines or overlays, save the image and reference it with a caption explaining its reasoning role.
-- Use HTML's stronger expressive power when useful: tables, CSS layout, inline SVG, diagrams, boards, arrows, overlays, charts, and image references.
-- Print exactly: HTML_DRAFT_PATH: <path> and HTML_DRAFT_SUMMARY: <short summary>.
-Never include `ANSWER:` or `TERMINATE` inside the Python code block; the final answer must be normal text outside code.
-If a Python ACTION computes the final value, print the value for inspection, then in the same assistant message after the code block write `ANSWER: <that concrete value> TERMINATE`.
-Do not mention the literal token `ANSWER:` in REFLECTION/THOUGHT unless you are actually giving the final answer.
-Never use placeholder final answers such as `{answer}`, `{final_answer}`, `<answer>`, or `[answer]`. The final answer must be a concrete label/value required by the task, such as `yes`, `no`, `(A)`, `128`, or `white`.
+Each HTML draft should function as a structured visual sketchpad:
+- include a visible title and the original prompt;
+- include a Thinking Text section explaining the reasoning step;
+- include an Objects / Entities section;
+- include an Attributes section when relevant;
+- include a Relations / Constraints section for spatial, causal, temporal, physical, cultural, or textual-image constraints;
+- include a Layout / Visual Draft section using semantic HTML, CSS boxes, tables, and/or inline SVG arrows when useful;
+- include an Open Issues / Revision Targets section when uncertainty remains.
+
+The HTML must be human-readable and self-contained. Use escaped text when embedding user content.
+The code should print the written HTML path and a compact textual summary of what the draft contains.
 
 Use local revision rather than regenerating the whole plan when the previous draft only needs a focused fix.
 If you have enough confidence, reply with:
-ANSWER: concrete_final_value TERMINATE
-"""
-
-JSON_VISUAL_ASSISTANT_MESSAGE = """You are a structured reasoning planner.
-Use JSON as a dynamic declarative visual draft: each non-final ACTION writes one valid JSON file.
-You are coding in a Python jupyter notebook environment. Each ACTION must be one executable ```python``` block unless you are giving the final ANSWER.
-Do not output HTML as the draft format.
-
-For each non-final turn:
-1. Start with REFLECTION. On the first turn, say this is the initial planning step.
-2. Then write THOUGHT with the current reasoning.
-3. Then write ACTION with Python code that writes a self-contained JSON file in the current working directory.
-
-JSON draft contract:
-- Valid UTF-8 JSON whose root is an object.
-- Include keys: title, original_prompt, thinking_text, objects_entities, relations_constraints, state_effects_view, retained_context, referenced_images, open_issues_revision_targets.
-- Treat the draft as mutable memory: preserve only useful prior fields, edit wrong fields, delete stale fields.
-- You may reference 0, 1, or many images. If Python draws auxiliary lines or overlays, save the image and store its path plus reasoning role in referenced_images.
-- JSON should encode the same reasoning content declaratively; it does not need to visually render layout unless layout is relevant evidence.
-- Print exactly: JSON_DRAFT_PATH: <path> and JSON_DRAFT_SUMMARY: <short summary>.
-Do not put raw text like `JSON_DRAFT_PATH: ...` or `JSON_DRAFT_SUMMARY: ...` inside the code block unless it is inside a Python print(...) call.
-Never include `ANSWER:` or `TERMINATE` inside the Python code block; the final answer must be normal text outside code.
-If a Python ACTION computes the final value, print the value for inspection, then in the same assistant message after the code block write `ANSWER: <that concrete value> TERMINATE`.
-Do not mention the literal token `ANSWER:` in REFLECTION/THOUGHT unless you are actually giving the final answer.
-Never use placeholder final answers such as `{answer}`, `{final_answer}`, `<answer>`, or `[answer]`. The final answer must be a concrete label/value required by the task, such as `yes`, `no`, `(A)`, `128`, or `white`.
-
-Use local revision rather than regenerating the whole plan when the previous draft only needs a focused fix.
-If you have enough confidence, reply with:
-ANSWER: concrete_final_value TERMINATE
+ANSWER: <final T2I generative prompt or final reasoning result> TERMINATE
 """
 
 
@@ -257,7 +229,7 @@ from tools import *
 # REQUIREMENTS #:
 1. The generated actions can resolve the given user request # USER REQUEST # perfectly. The user request is reasonable and can be solved. Try your best to solve the request.
 2. The arguments of a tool must be the same number, modality, and format specified in # TOOL LIST #;
-3. If you think you got the answer, use ANSWER: concrete_final_value to provide the answer, and ends with TERMINATE.
+3. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
 4. All images in the initial user request are stored in PIL Image objects named image_1, image_2, ..., image_n. You can use these images in your code blocks. Use display() function to show the image in the notebook for you too see.
 5. Use as few tools as possible. Only use the tools for the use cases written in the tool description. You can use multiple tools in a single action.
 6. You must return an answer with the choice letter if the user request is a multiple-choice question.
@@ -288,7 +260,7 @@ display(image_1_dog_detection.annotated_image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.>
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: A dog is detected by the tool. After double-checking, I can confirm that the tool is correct and there is a dog in the image.
 ACTION 1: No action needed.
 ANSWER: Yes, there is a dog in the image. So the answer is (a). TERMINATE
@@ -306,7 +278,7 @@ display(image_1_bucket_detection.annotated_image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.>
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: The bucket has been detected and is labeled as "bucket 1" in the image. I will zoom in on the bucket to identify its color.
 ACTION 1:
 ```python
@@ -432,7 +404,7 @@ ANSWER: The third image fits into the black part. TERMINATE
             prompt += f"# USER IMAGE stored in {', '.join([f'image_{i}' for i in range(1, n_images+1)])} as PIL image.\n"
         else:
             prompt += "# USER IMAGE: No image provided.\n"
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -456,7 +428,7 @@ ANSWER: The third image fits into the black part. TERMINATE
             prompt += (
                 "First provide REFLECTION on whether the previous reasoning/action was valid or needs correction, "
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
-                "ANSWER: concrete_final_value and ends with TERMINATE."
+                "ANSWER: <your answer> and ends with TERMINATE."
             )
             return prompt
     
@@ -473,31 +445,42 @@ def python_codes_for_images_reading(image_paths):
 
 
 class HTMLVisualPrompt:
-    """Prompt generator for StruVis-style HTML visual drafts."""
+    """Prompt generator for StruVis-style HTML visual drafts.
 
-    draft_format = "html"
+    This keeps the VisualSketchpad planner/executor loop but replaces
+    intermediate image/JSON sketches with self-contained HTML artifacts.
+    """
 
     def initial_prompt(self, query: str, n_images: int = 0) -> str:
         return f"""# USER REQUEST #
 {query}
 
 # GOAL #
-Reason with HTML visual drafts, then finish with the required final answer or generative prompt.
+Reason about this text-to-image generation request using StruVis-style thinking:
+1. Decompose the prompt into explicit and hidden visual constraints.
+2. Build an HTML structured-vision draft, not JSON and not an image.
+3. Use the draft to check object coverage, attributes, relations, layout, physical/cultural/scientific consistency, and text-image design constraints.
+4. Revise the HTML draft locally if needed.
+5. Finish with a final generative prompt suitable for a text-to-image model.
 
 # ACTION FORMAT #
-For every non-final step, return exactly one Python code block. It must write one UTF-8 `.html` file and print exactly:
-HTML_DRAFT_PATH: <path>
-HTML_DRAFT_SUMMARY: <short summary>
+For every non-final step, return exactly one Python code block. The code must write an HTML file such as `visual_draft_step_0.html` and print:
+- HTML_DRAFT_PATH: <path>
+- HTML_DRAFT_SUMMARY: <short summary>
 
-# DYNAMIC HTML DRAFT CONTRACT #
-- The file must contain html/head/body tags and visible sections labelled Thinking, Objects, Relations, State, Revision, Retained, Referenced Images.
-- Treat each draft as editable memory. Keep only prior content that is still useful, correct mistakes, delete stale details, and add new evidence.
-- You may reference 0, 1, or many images. If you draw auxiliary lines, overlays, charts, boards, or diagrams with Python, save the image and reference it in the HTML with a caption explaining why it matters.
-- Use HTML's expressive power when helpful: CSS layout, tables, inline SVG arrows, image overlays, board renderings, diagrams, charts, and spatial grouping.
-- Do not use JSON as the draft representation.
+# HTML DRAFT REQUIREMENTS #
+Use semantic HTML, CSS, and optional inline SVG. Do not use JSON as the draft representation.
+The HTML should make visual relationships inspectable through sections, diagrams, boxes, arrows, and labels.
+Prefer a compact but complete draft over a long narrative. Use the following sections when applicable:
+- Thinking Text
+- Objects / Entities
+- Attributes
+- Relations / Constraints
+- Layout / Visual Draft
+- Open Issues / Revision Targets
 
 # FINAL FORMAT #
-When the draft is complete, respond with `ANSWER: concrete_final_value TERMINATE`.
+When the draft is complete, respond with `ANSWER: ... TERMINATE`.
 """
 
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -505,7 +488,7 @@ When the draft is complete, respond with `ANSWER: concrete_final_value TERMINATE
             "OBSERVATION: The previous response did not contain one executable Python code block.\n"
             f"Parser message: {error_message}\n"
             "Continue with REFLECTION, THOUGHT, and exactly one ACTION code block that writes the HTML draft. "
-            "If the draft is complete, use ANSWER: concrete_final_value TERMINATE."
+            "If the draft is complete, use ANSWER: ... TERMINATE."
         )
 
     def get_exec_feedback(self, exit_code: int, output: str) -> str:
@@ -517,220 +500,7 @@ When the draft is complete, respond with `ANSWER: concrete_final_value TERMINATE
         return (
             f"OBSERVATION: Execution success. The output is as follows:\n{output}\n"
             "Inspect the HTML draft path and summary. If the draft is incomplete or inconsistent, revise it locally in the next ACTION. "
-            "If it is sufficient, provide ANSWER: concrete_final_value TERMINATE as plain text with no code block."
-        )
-
-    def get_validation_feedback(self, validation_message: str, output: str) -> str:
-        return (
-            "OBSERVATION: The previous code executed, but the HTML draft failed validation.\n"
-            f"Validation message: {validation_message}\n"
-            f"Execution output:\n{output}\n"
-            "Revise with REFLECTION, THOUGHT, and exactly one ACTION code block that writes a valid dynamic HTML draft."
-        )
-
-
-class JSONVisualPrompt:
-    """Prompt generator for StruVis-style JSON visual drafts."""
-
-    draft_format = "json"
-
-    def initial_prompt(self, query: str, n_images: int = 0) -> str:
-        return f"""# USER REQUEST #
-{query}
-
-# GOAL #
-Reason with JSON declarative visual drafts, then finish with the required final answer or generative prompt.
-
-# ACTION FORMAT #
-For every non-final step, return exactly one Python code block. It must write one UTF-8 `.json` file and print exactly:
-JSON_DRAFT_PATH: <path>
-JSON_DRAFT_SUMMARY: <short summary>
-
-# DYNAMIC JSON DRAFT CONTRACT #
-- The JSON root must be an object with keys: title, original_prompt, thinking_text, objects_entities, relations_constraints, state_effects_view, retained_context, referenced_images, open_issues_revision_targets.
-- Treat each draft as editable memory. Keep only prior fields that are still useful, correct mistakes, delete stale details, and add new evidence.
-- You may reference 0, 1, or many images. If you draw auxiliary lines, overlays, charts, boards, or diagrams with Python, save the image and store its path plus reasoning role in referenced_images.
-- JSON should encode visual evidence declaratively. Do not use HTML as the draft representation.
-
-# FINAL FORMAT #
-When the draft is complete, respond with `ANSWER: concrete_final_value TERMINATE`.
-"""
-
-    def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
-        return (
-            "OBSERVATION: The previous response did not contain one executable Python code block.\n"
-            f"Parser message: {error_message}\n"
-            "Continue with REFLECTION, THOUGHT, and exactly one ACTION code block that writes the JSON draft. "
-            "If the draft is complete, use ANSWER: concrete_final_value TERMINATE."
-        )
-
-    def get_exec_feedback(self, exit_code: int, output: str) -> str:
-        if exit_code != 0:
-            return (
-                f"OBSERVATION: Execution error. Exit code: {exit_code}, Output:\n{output}\n"
-                "First provide REFLECTION on why the previous JSON-draft code failed, then generate the full corrected ACTION code block."
-            )
-        return (
-            f"OBSERVATION: Execution success. The output is as follows:\n{output}\n"
-            "Inspect the JSON draft path and summary. If the draft is incomplete or inconsistent, revise it locally in the next ACTION. "
-            "If it is sufficient, provide ANSWER: concrete_final_value TERMINATE as plain text with no code block."
-        )
-
-    def get_validation_feedback(self, validation_message: str, output: str) -> str:
-        return (
-            "OBSERVATION: The previous code executed, but the JSON draft failed validation.\n"
-            f"Validation message: {validation_message}\n"
-            f"Execution output:\n{output}\n"
-            "Revise with REFLECTION, THOUGHT, and exactly one ACTION code block that writes a valid dynamic JSON draft."
-        )
-
-
-INITIAL_RESULT_SUFFIX = (
-    "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with "
-    "ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
-)
-
-
-def _draft_task_specific_guidance(task_type: str) -> str:
-    if task_type == "geo":
-        return (
-            "- For geometry, keep symbolic givens, target, auxiliary constructions, theorem candidates, and equation chains explicit.\n"
-            "- For geometry, the first non-final draft should normally generate a matplotlib/PIL evidence image, preferably the original diagram redrawn with useful auxiliary lines, labels, highlights, or angle/length annotations.\n"
-            "- HTML geometry drafts can embed that image with an <img> tag and a caption explaining its reasoning role; JSON geometry drafts can record that image in referenced_images with path and role.\n"
-            "- This follows the VisualSketchpad convention: use visual drawing when it helps, but later turns may answer without generating another image if the existing evidence is sufficient.\n"
-            "- HTML drafts should visualize not-to-scale diagrams, labels, and theorem/equation panels; JSON drafts should encode those items as structured fields.\n"
-        )
-    if task_type == "math":
-        return (
-            "- For graph and math tasks, keep the exact problem data, intermediate state, and decisive evidence explicit.\n"
-            "- For graph tasks, include nodes, edges, capacities/weights, and current path/cut/flow or connectivity state.\n"
-            "- For board-game tasks such as chess, include board state, side to move, legal-move summary, terminal signals, and concise evidence.\n"
-        )
-    return (
-        "- For vision tasks, preserve object evidence, relevant spatial relations, and any state that explains the final answer.\n"
-        "- HTML drafts may visualize regions, boxes, and relations; JSON drafts should keep the same content in symbolic form.\n"
-    )
-
-
-def build_draft_format_guidance(draft_format: str, task_type: str) -> str:
-    if draft_format == "html":
-        header = (
-            "# INTERMEDIATE DRAFT FORMAT #:\n"
-            "Use HTML as the dynamic visual draft format while keeping the original task objective unchanged.\n"
-            "Every non-final ACTION must write one valid `.html` draft and print exactly `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.\n"
-            "The HTML must contain html/head/body tags and visible sections labelled Thinking, Objects, Relations, State, Revision, Retained, Referenced Images.\n"
-            "Across turns, selectively keep, edit, or delete prior draft content. Reference 0, 1, or many images; generated overlays/diagrams must be saved and embedded or linked with a reasoning caption.\n"
-            "For geometry tasks, prefer generating an auxiliary-line or annotated diagram image in the first draft when it helps, matching the VisualSketchpad drawing convention.\n"
-            "If ready to finish, output `ANSWER: concrete_final_value TERMINATE` as plain text with no code block and no placeholder answer.\n"
-            "Minimal ACTION pattern:\n"
-            "```python\n"
-            "from pathlib import Path\n"
-            "import html\n"
-            "doc = '''<!doctype html><html><head><meta charset=\"utf-8\"><title>Visual Draft</title></head><body><h1>Visual Draft</h1><section><h2>Thinking</h2></section><section><h2>Objects</h2></section><section><h2>Relations</h2></section><section><h2>State</h2></section><section><h2>Revision</h2></section><section><h2>Retained</h2></section><section><h2>Referenced Images</h2></section></body></html>'''\n"
-            "path = Path('visual_draft_step_0.html')\n"
-            "path.write_text(doc, encoding='utf-8')\n"
-            "print(f\"HTML_DRAFT_PATH: {path}\")\n"
-            "print('HTML_DRAFT_SUMMARY: concise summary')\n"
-            "```\n"
-        )
-    elif draft_format == "json":
-        header = (
-            "# INTERMEDIATE DRAFT FORMAT #:\n"
-            "Use JSON as the dynamic declarative visual draft format while keeping the original task objective unchanged.\n"
-            "Every non-final ACTION must write one valid `.json` draft and print exactly `JSON_DRAFT_PATH: <path>` and `JSON_DRAFT_SUMMARY: <summary>`.\n"
-            "The JSON root must include: title, original_prompt, thinking_text, objects_entities, relations_constraints, state_effects_view, retained_context, referenced_images, open_issues_revision_targets.\n"
-            "Across turns, selectively keep, edit, or delete prior draft fields. Reference 0, 1, or many images; generated overlays/diagrams must be saved and recorded with their reasoning role.\n"
-            "For geometry tasks, prefer generating an auxiliary-line or annotated diagram image in the first draft when it helps, matching the VisualSketchpad drawing convention.\n"
-            "If ready to finish, output `ANSWER: concrete_final_value TERMINATE` as plain text with no code block and no placeholder answer.\n"
-            "Minimal ACTION pattern:\n"
-            "```python\n"
-            "from pathlib import Path\n"
-            "import json\n"
-            "draft = {\n"
-            "    'title': 'Visual Draft',\n"
-            "    'original_prompt': '...',\n"
-            "    'thinking_text': '...',\n"
-            "    'objects_entities': [],\n"
-            "    'relations_constraints': [],\n"
-            "    'state_effects_view': {},\n"
-            "    'retained_context': {'kept': [], 'changed': [], 'removed': []},\n"
-            "    'referenced_images': [],\n"
-            "    'open_issues_revision_targets': []\n"
-            "}\n"
-            "path = Path('visual_draft_step_0.json')\n"
-            "path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding='utf-8')\n"
-            "print(f\"JSON_DRAFT_PATH: {path}\")\n"
-            "print('JSON_DRAFT_SUMMARY: concise summary')\n"
-            "```\n"
-        )
-    else:
-        return ""
-
-    footer = (
-        "Keep the final answer criteria unchanged; only the intermediate draft representation changes.\n"
-        + _draft_task_specific_guidance(task_type)
-    )
-    return header + footer
-
-
-def _rewrite_legacy_prompt_for_draft_format(prompt: str, draft_format: str, task_type: str) -> str:
-    if draft_format not in {"html", "json"}:
-        return prompt
-
-    draft_label = "HTML" if draft_format == "html" else "JSON"
-    suffix = (
-        f"\n# {draft_label} DRAFT OVERRIDE #:\n"
-        f"Any previous examples that show raw `display(image)` or `plt.show()` are helper inspections only. "
-        f"The accepted intermediate artifact for this run is a valid dynamic {draft_label} draft file that passes the format contract below.\n"
-    )
-    return prompt + suffix
-
-
-class DraftFormatPromptWrapper:
-    def __init__(self, base_prompt, task_type: str, draft_format: str) -> None:
-        self.base_prompt = base_prompt
-        self.task_type = task_type
-        self.draft_format = draft_format
-
-    def initial_prompt(self, query, n_images):
-        prompt = self.base_prompt.initial_prompt(query, n_images)
-        prompt = _rewrite_legacy_prompt_for_draft_format(prompt, self.draft_format, self.task_type)
-        guidance = build_draft_format_guidance(self.draft_format, self.task_type)
-        if not guidance:
-            return prompt
-        if prompt.endswith(INITIAL_RESULT_SUFFIX):
-            return prompt[: -len(INITIAL_RESULT_SUFFIX)] + guidance + "\n" + INITIAL_RESULT_SUFFIX
-        return prompt + "\n" + guidance
-
-    def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
-        base_feedback = self.base_prompt.get_parsing_feedback(error_message, error_code)
-        draft_label = "HTML" if self.draft_format == "html" else "JSON"
-        return (
-            base_feedback
-            + f"\nKeep using {draft_label} as the intermediate draft format for this task; do not switch representations."
-        )
-
-    def get_exec_feedback(self, exit_code: int, output: str) -> str:
-        base_feedback = self.base_prompt.get_exec_feedback(exit_code, output)
-        draft_label = "HTML" if self.draft_format == "html" else "JSON"
-        if exit_code != 0:
-            return (
-                base_feedback
-                + f"\nRetry with corrected {draft_label}-draft code while preserving the same task-solving goal."
-            )
-        return (
-            base_feedback
-            + f"\nIf another intermediate step is needed, keep the next non-trivial ACTION in {draft_label} draft form."
-        )
-
-    def get_validation_feedback(self, validation_message: str, output: str) -> str:
-        draft_label = "HTML" if self.draft_format == "html" else "JSON"
-        return (
-            f"OBSERVATION: The previous code executed, but the {draft_label} draft failed validation.\n"
-            f"Validation message: {validation_message}\n"
-            f"Execution output:\n{output}\n"
-            f"Continue with REFLECTION, THOUGHT, and exactly one ACTION code block that writes a valid dynamic {draft_label} draft. "
-            "Keep useful prior content, remove stale content, and fix the reported format problem."
+            "If it is sufficient, provide ANSWER: <final generative prompt> TERMINATE."
         )
 
 
@@ -785,40 +555,57 @@ from tools import *
 3. Treat the matplotlib coordinates as a schematic drawing by default. Do NOT use raw plotted coordinates, pixel distances, midpoint distances, or the distance formula on plotted points as true geometric lengths unless the problem explicitly states that it is a coordinate-geometry problem.
 4. If the symbolic givens from the diagram logic form disagree with the apparent plotted lengths, trust the symbolic givens and treat the drawing as not to scale.
 5. For trapezoids, circles, similar triangles, angle-chasing, and other standard Euclidean geometry problems, solve from the stated geometric relations first; use the drawing only to decide what auxiliary line or configuration to inspect.
-6. If you think you got the answer, use ANSWER: concrete_final_value to provide the answer, and ends with TERMINATE.
+6. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
 3. If the problem provides multiple-choice options, your FINAL ANSWER must include the choice letter only, such as ANSWER: (A). You may briefly justify it before the final answer, but the final answer itself must contain the option letter.
 4. Do not invent missing measurements. Only use lengths, angles, arcs, and radii explicitly given in the text, logic form, diagram code, or derived from valid geometry theorems.
 5. Do not treat a segment length like SU as an arc length unless the prompt explicitly says it is an arc length.
 6. Before using a formula, verify the object type: angle, arc, chord, side length, area, circumference, or radius.
 7. If the problem asks for auxiliary lines, propose them first; if no auxiliary line is needed, state that explicitly and solve using a valid theorem.
-8. Never use placeholder final answers such as {{answer}}, {{final_answer}}, <answer>, or [answer]. The final answer must use the concrete label, value, or token required by the task.
-9. For chess `winner_id` tasks, do not guess from the picture alone. Use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves.
-10. If this run specifies an HTML or JSON draft format, the chess board state, side to move, terminal-status signals, legal-move summary, and concise evidence must be stored in that required draft format before answering.
-11. For pure math function tasks (`math_convexity`, `math_parity`, `math_breakpoint`), do not default to plotting. First solve symbolically or algebraically using function rules, derivatives, simplification, or direct substitution checks. Use plots only as optional debugging or supporting evidence when symbolic analysis is ambiguous.
-12. For convexity on x > 0: `log(x)` is concave, `-log(x)` is convex, `exp(a*x)` is convex for nonzero `a`, a negative coefficient times a convex function is concave, `Abs(x)` is convex, `-Abs(x)` is concave, and linear terms are both convex and concave. Plots are not proof.
-13. For parity: compare `f(-x)` with `f(x)` and `-f(x)` algebraically. Even powers and `Abs(x)` are even; odd powers are odd; sums of only even terms are even, sums of only odd terms are odd, and mixtures are usually neither. Use Python/SymPy simplification before relying on a graph.
+8. For chess `winner_id` tasks, use text + Python code + HTML intermediate drafts. ACTION 0 must be a Python code block that writes a self-contained HTML file as the initial visual sketchpad before making any conclusion.
+9. For chess `winner_id` tasks, each HTML draft must include the board rendered from the FEN, FEN text, side to move, terminal-status signals, legal-move summary, and a concise evidence section. The code must print `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.
+10. For chess `winner_id` tasks, after the initial HTML draft, every additional non-trivial action should, when feasible, write an updated HTML draft tied to the current reasoning step, such as check status, legal-move information, attacked-square overlays, material balance, king safety, or another board-centered visualization.
+11. For chess `winner_id` tasks, do not guess from the picture alone. After writing the HTML board draft, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the HTML draft before answering.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE: Solving a math convexity problem
 # USER REQUEST #: You are given a real-valued, scalar function f(x). YOUR TASK is to determine whether f(x) is an convex function or concave function.\nDefinition of a convex function: A function such that for all x, y, and 0 <= t <= 1\nf (tx + (1 − t)y) ≤ t f (x) + (1 − t) f (y)\nDefinition of a concave function: A function such that for all x, y, and 0 <= t <= 1\nf (tx + (1 − t)y) ≥ t f (x) + (1 − t) f (y)\nHere is the expression of f(x), defined for all x>0. Here is the expression of f(x): f(x) = 2.23*Abs(x) + 6.64\nRespond with 'convex' or 'concave' on whether the function f (x) is convex or concave, based on the definitions and your observation of the function.
 # RESULT #:
-THOUGHT 0: This is a pure function convexity task, so I will solve it symbolically rather than relying on a plot. On the domain x > 0, Abs(x) = x, so f(x) = 2.23*x + 6.64 is linear. A linear function satisfies the convex inequality; when the task requires choosing one of convex or concave for this expression, the positive absolute-value term supports classifying it as convex.
+THOUGHT 0: I will plot the function f(x) = 2.23*Abs(x) + 6.64 to visualize the function.
 ACTION 0:
 ```python
-import sympy as sp
+import numpy as np
+import matplotlib.pyplot as plt
+from io import BytesIO
 
-x = sp.symbols("x", positive=True)
-f = 2.23 * sp.Abs(x) + 6.64
-simplified = sp.simplify(f)
-second_derivative = sp.diff(simplified, x, 2)
-print("simplified:", simplified)
-print("second_derivative:", second_derivative)
+# Define the function f(x)
+def f(x):
+    return 2.23 * np.abs(x) + 6.64
+
+# Generate x values from -10 to 10
+x = np.linspace(-10, 10, 400)
+
+# Compute y values using the function
+y = f(x)
+
+# Create the plot
+plt.figure(figsize=(8, 6))
+plt.plot(x, y, label='f(x) = 2.23*|x| + 6.64')
+plt.title('Plot of the function f(x) = 2.23*|x| + 6.64')
+
+# Save the plot to a buffer
+buf = BytesIO()
+plt.savefig(buf, format='png')
+plt.close()
+
+# Load image from buffer
+buf.seek(0)
+image = Image.open(buf)
+display(image)
 ```
 OBSERVATION: Execution success. The output is as follows:
-simplified: 2.23*x + 6.64
-second_derivative: 0
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
-THOUGHT 1: The function simplifies to a linear function on x > 0. Linear functions satisfy the convex inequality, and the positive Abs coefficient is consistent with convexity.
+<the image outputs of the previous code is here.>
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+THOUGHT 1: For any two points on the graph shown in the image, the line segment connecting them lies above or on the graph. Therefore, the function is convex 
 ACTION 1: No action needed.
 ANSWER: convex. TERMINATE
 
@@ -859,7 +646,7 @@ display(image)
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.> 
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 ANSWER: yes, there is a path. TERMINATE
 
 
@@ -933,7 +720,7 @@ print("HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is c
 OBSERVATION: Execution success. The output is as follows:
 HTML_DRAFT_PATH: visual_draft_step_0.html
 HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is checkmated.
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next REFLECTION, THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next REFLECTION, THOUGHT and ACTION.
 REFLECTION 1: The initial step was sufficient because the HTML draft contains both the board sketch and the decisive terminal-status evidence.
 THOUGHT 1: The HTML draft matches the FEN, and its rules table shows that Black is to move, Black is in check, and there are no legal moves. Therefore the position is checkmate and White is the winner.
 ACTION 1: No action needed.
@@ -984,7 +771,7 @@ plt.show()
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.> yes, there is a path.
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: Based on the visual comparison of the two graphs, I can see that the sequence of degrees in both graphs are similar. Therefore, the two graphs are isomorphic.
 ACTION 1: No action needed.
 ANSWER: The two graphs are isomorphic. TERMINATE
@@ -992,21 +779,40 @@ ANSWER: The two graphs are isomorphic. TERMINATE
 # EXAMPLE: Solving a math parity problem
 # USER REQUEST #: You are given a real-valued, scalar function f (x). YOUR TASK is to determine whether f(x) is an even function, an odd function, or neither.\nDefinition of an odd function: A function such that\nf(−x) = −f(x)\nwhere the sign is reversed but the absolute value remains the same if the sign of the independent variable is reversed.\nA function is neither even nor odd if it does not satisfy either condition. Here is the expression of f(x): f(x) = x*(6.0 - 16.0*x**2)/(8.0*x**10 + 6.0*x**4 + 4.28)\nRespond with 'even', 'odd', 'neither' first on whether the function f(x) is even, odd, or neither, based on the definitions and your observation of the function.
 # RESULT #:
-THOUGHT 0: This is a pure parity task, so I will compare f(-x) with f(x) and -f(x) algebraically instead of relying on a plot. The numerator is x times an even polynomial, so it is odd; the denominator is an even polynomial; odd divided by even is odd when the denominator is nonzero.
+THOUGHT 0: I will plot the function f(x) = x*(6.0 - 16.0*x**2)/(8.0*x**10 + 6.0*x**4 + 4.28) to visualize the function.
 ACTION 0:
 ```python
-import sympy as sp
+import numpy as np
+import matplotlib.pyplot as plt
+from io import BytesIO
 
-x = sp.symbols("x")
-f = x * (6.0 - 16.0*x**2) / (8.0*x**10 + 6.0*x**4 + 4.28)
-print("f(-x) - f(x):", sp.simplify(f.subs(x, -x) - f))
-print("f(-x) + f(x):", sp.simplify(f.subs(x, -x) + f))
+# Define the function
+def f(x):
+    return x * (6.0 - 16.0 * x**2) / (8.0 * x**10 + 6.0 * x**4 + 4.28)
+
+# Generate x values
+x = np.linspace(-10, 10, 400)
+# Calculate y values
+y = f(x)
+
+# Plot the function
+plt.plot(x, y)
+plt.title('Plot of f(x) = x*(6.0 - 16.0*x**2)/(8.0*x**10 + 6.0*x**4 + 4.28)')
+
+# Save the plot to a buffer
+buf = BytesIO()
+plt.savefig(buf, format='png')
+plt.close()
+
+# Load image from buffer
+buf.seek(0)
+image = Image.open(buf)
+display(image)
 ```
 OBSERVATION: Execution success. The output is as follows:
-f(-x) - f(x): -2*x*(16.0*x**2 - 6.0)/(8.0*x**10 + 6.0*x**4 + 4.28)
-f(-x) + f(x): 0
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
-THOUGHT 1: Since f(-x) + f(x) simplifies to 0, f(-x) = -f(x). Therefore, the function is odd.
+<the image outputs of the previous code is here.>
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+THOUGHT 1: For the graph shown in the image, the function is symmetric with respect to the origin. Therefore, the function is odd.
 ACTION 1: No action needed.
 ANSWER: odd. TERMINATE
 """
@@ -1042,18 +848,7 @@ ANSWER: odd. TERMINATE
             code = ex["code"]
             taskprompt = taskprompt.format(code)
         prompt += f"# USER REQUEST #: {taskprompt}\n"
-        final_answer_contract = {
-            "math_breakpoint": "Final answer format: after `ANSWER:`, output the breakpoint count in digits, not a placeholder.",
-            "math_convexity": "Final answer format: after `ANSWER:`, output exactly `convex` or `concave`, not a placeholder.",
-            "math_parity": "Final answer format: after `ANSWER:`, output exactly `even`, `odd`, or `neither`, not a placeholder.",
-            "graph_connectivity": "Final answer format: after `ANSWER:`, start with exactly `yes` or `no`, not a placeholder. If you want, you may put a short explanation after that concrete token.",
-            "graph_maxflow": "Final answer format: after `ANSWER:`, output the concrete maximum-flow value, not a placeholder.",
-            "graph_isomorphism": "Final answer format: after `ANSWER:`, output exactly `true` or `false`, not a placeholder.",
-            "winner_id": "Final answer format: after `ANSWER:`, output exactly one of `white`, `black`, or `draw`, not a placeholder.",
-        }
-        if self.subtask in final_answer_contract:
-            prompt += f"# FINAL ANSWER FORMAT #: {final_answer_contract[self.subtask]}\n"
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -1077,7 +872,7 @@ ANSWER: odd. TERMINATE
             prompt += (
                 "First provide REFLECTION on whether the previous reasoning/action was valid or needs correction, "
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
-                "ANSWER: concrete_final_value and ends with TERMINATE."
+                "ANSWER: <your answer> and ends with TERMINATE."
             )
             return prompt
     
@@ -1199,7 +994,7 @@ from tools import find_perpendicular_intersection, find_parallel_intersection
 3. Treat the matplotlib coordinates as a schematic drawing by default. Do NOT use raw plotted coordinates, pixel distances, midpoint distances, or the distance formula on plotted points as true geometric lengths unless the problem explicitly states that it is a coordinate-geometry problem.
 4. If the symbolic givens from the diagram logic form disagree with the apparent plotted lengths, trust the symbolic givens and treat the drawing as not to scale.
 5. For trapezoids, circles, similar triangles, angle-chasing, and other standard Euclidean geometry problems, solve from the stated geometric relations first; use the drawing only to decide what auxiliary line or configuration to inspect.
-6. If you think you got the answer, use ANSWER: concrete_final_value to provide the answer, and ends with TERMINATE.
+6. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE #:
@@ -1286,7 +1081,7 @@ plt.show()
 ```
 OBSERVATION: Execution success. The output is as follows:
 <the image outputs of the previous code is here.> 
-If you can get the answer, please reply with ANSWER: concrete_final_value and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
+If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next THOUGHT and ACTION.
 THOUGHT 1: To solve X, we can ....
 ACTION 1: No action needed.
 ANSWER: (B). TERMINATE
@@ -1304,7 +1099,7 @@ ANSWER: (B). TERMINATE
         f"Below is the original matplotlib code of the geometry: {code}\nYou must draw auxiliary lines to solve the following question: [{question}]\n" + \
         "In THOUGHT 0, first list the relevant symbolic givens from the diagram logic form that you will use. Do not infer true lengths from the plotted coordinates unless the question is explicitly coordinate geometry. " + \
         "Propose matplotlib code to draw the auxiliary lines. Make sure to label the beginning and end point of the auxiliary line."
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: concrete_final_value and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -1327,7 +1122,7 @@ ANSWER: (B). TERMINATE
             prompt += (
                 "First provide REFLECTION on whether the previous reasoning/action was valid or needs correction, "
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
-                "ANSWER: concrete_final_value and ends with TERMINATE."
+                "ANSWER: <your answer> and ends with TERMINATE."
             )
             return prompt
     

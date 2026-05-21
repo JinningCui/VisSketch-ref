@@ -84,7 +84,7 @@ def prepare_winner_id_prompt(example):
     text_query += (
         "Always start by creating an HTML intermediate draft in THOUGHT 0 / ACTION 0. "
         "The ACTION must be Python code that writes a self-contained HTML file in the current working directory.\n"
-        "The HTML draft must include the current board derived from the FEN, either as a rendered board image or as a symbolic HTML board/table using chess piece symbols or text labels, plus the FEN text, side to move, "
+        "The HTML draft must include the current board rendered from the FEN, the FEN text, side to move, "
         "terminal-status signals, legal-move summary, and a concise evidence section.\n"
         "Use `python-chess` rules to reason carefully from the current position.\n"
         "After the initial HTML draft, each additional non-trivial chess analysis step should, when feasible, "

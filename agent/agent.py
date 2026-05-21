@@ -1,7 +1,7 @@
 from mm_user_proxy_agent import MultimodalUserProxyAgent
 from autogen.agentchat import Agent
 from typing import Dict, Optional, Union
-from utils import extract_answer_text, content_to_text
+from utils import content_to_text
 
 class SketchpadUserAgent(MultimodalUserProxyAgent):
     
@@ -23,13 +23,6 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
         
     def sender_hits_max_reply(self, sender: Agent):
         return self._consecutive_auto_reply_counter[sender.name] >= self._max_consecutive_auto_reply
-
-    def _contains_terminate(self, message: Union[Dict, str]) -> bool:
-        if isinstance(message, dict):
-            content = content_to_text(message.get("content", ""))
-        else:
-            content = str(message)
-        return extract_answer_text(content) is not None
 
     def _append_memory_feedback(
         self,
@@ -78,7 +71,7 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
         parsed_error_code = parsed_results['error_code']
         
         # if TERMINATION message, then return
-        if not parsed_status and self._contains_terminate(message):
+        if not parsed_status and self._is_termination_msg(message):
             return
         
         # if parsing fails
@@ -129,16 +122,6 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
                 
             # if execution succeeds
             else:
-                if self._contains_terminate(message):
-                    self._append_memory_feedback(
-                        "",
-                        message,
-                        output,
-                        file_paths=file_paths,
-                        stage="final",
-                    )
-                    self._consecutive_auto_reply_counter[sender.name] = 0
-                    return
                 reply = self._append_memory_feedback(
                     reply,
                     message,

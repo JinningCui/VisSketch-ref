@@ -9,11 +9,9 @@ from prompt import (
     MathPrompt,
     GeoPrompt,
     HTMLVisualPrompt,
-    JSONVisualPrompt,
     python_codes_for_images_reading,
     MULTIMODAL_ASSISTANT_MESSAGE,
     HTML_VISUAL_ASSISTANT_MESSAGE,
-    JSON_VISUAL_ASSISTANT_MESSAGE,
 )
 from memory_agent import MemoryOrganizerAgent
 from parse import Parser
@@ -33,19 +31,10 @@ def checks_terminate_message(msg):
         raise NotImplementedError
 
 
-def _resolve_system_message(task_type):
-    if task_type == "t2i_html":
-        return HTML_VISUAL_ASSISTANT_MESSAGE
-    if task_type == "t2i_json":
-        return JSON_VISUAL_ASSISTANT_MESSAGE
-    return MULTIMODAL_ASSISTANT_MESSAGE
-
-
 def run_agent(
     task_input,
     output_dir,
     task_type="vision",
-    draft_format=None,
     memory_format=None,
     task_name=None,
     backend=None,
@@ -61,17 +50,13 @@ def run_agent(
     Args:
         task_input (str): a path to the task input directory
         output_dir (str): a path to the directory where the output will be saved
-        task_type (str): Task type. Should be vision, math, geo, t2i_html, or t2i_json. Defaults to "vision".
-        draft_format (str, optional): Backward-compatible alias for memory_format.
+        task_type (str): Task type. Should be vision, math, geo, or t2i_html. Defaults to "vision".
         memory_format (str, optional): External dynamic memory format. One of None, "html", "json", or "image".
         task_name (str, optional): Only needed for math tasks. Defaults to None.
     """
     
-    # task type should be one of "vision", "math", "geo", "t2i_html", "t2i_json"
-    assert task_type in ["vision", "math", "geo", "t2i_html", "t2i_json"]
-    if memory_format is None and draft_format is not None:
-        memory_format = draft_format
-    assert draft_format in [None, "html", "json"]
+    # task type should be one of "vision", "math", "geo", "t2i_html"
+    assert task_type in ["vision", "math", "geo", "t2i_html"]
     assert memory_format in [None, "html", "json", "image"]
     
     # create a directory for the task
@@ -119,7 +104,7 @@ def run_agent(
         parser = Parser()
         executor = CodeExecutor(working_dir=task_directory)
 
-    elif task_type in {"t2i_html", "t2i_json"}:
+    elif task_type == "t2i_html":
         query_file = None
         for candidate in ("request.json", "prompt.json", "example.json", "ex.json"):
             candidate_path = os.path.join(task_input, candidate)
@@ -128,7 +113,7 @@ def run_agent(
                 break
         if query_file is None:
             raise FileNotFoundError(
-                f"{task_type} tasks require request.json, prompt.json, example.json, or ex.json."
+                "t2i_html tasks require request.json, prompt.json, example.json, or ex.json."
             )
 
         task_payload = json.load(open(query_file))
@@ -143,7 +128,7 @@ def run_agent(
         else:
             query = str(task_payload)
         images = []
-        prompt_generator = HTMLVisualPrompt() if task_type == "t2i_html" else JSONVisualPrompt()
+        prompt_generator = HTMLVisualPrompt()
         parser = Parser()
         executor = CodeExecutor(working_dir=task_directory)
     
@@ -177,7 +162,9 @@ def run_agent(
         human_input_mode='NEVER',
         max_consecutive_auto_reply=MAX_REPLY,
         is_termination_msg = lambda x: False,
-        system_message=_resolve_system_message(task_type) + build_memory_prompt(task_name),
+        system_message=(
+            HTML_VISUAL_ASSISTANT_MESSAGE if task_type == "t2i_html" else MULTIMODAL_ASSISTANT_MESSAGE
+        ) + build_memory_prompt(task_name),
         llm_config=False if llm_runtime.client is not None else None,
         llm_client=llm_runtime.client,
     )
@@ -199,7 +186,6 @@ def run_agent(
         
     
     # save the results
-    os.makedirs(task_directory, exist_ok=True)
     structured_trace = build_structured_trace(all_messages)
     with open(os.path.join(task_directory, "output.json"), "w") as f:
         json.dump(all_messages, f, indent=4, default=custom_encoder)
@@ -214,7 +200,6 @@ def run_agent(
         os.path.join(task_directory, "prediction_summary.json"),
         {
             "task_type": task_type,
-            "draft_format": draft_format,
             "memory_format": memory_format,
             "task_name": task_name,
             "task_input": task_input,

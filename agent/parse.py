@@ -1,41 +1,29 @@
-import re
-
-
 class Parser:
     def parse(self, response):
         if isinstance(response, dict) and 'content' in response:
             response = response['content']
-        content = str(response).replace(r"\_", "_")
+        oring_content = response.replace("\_", "_")
+        content = oring_content.replace("\\", "")
         
         try:
-            matches = re.findall(r"```(?:python|py)\s*\n?(.*?)```", content, flags=re.DOTALL | re.IGNORECASE)
-            if not matches:
-                return {
-                    'status': False,
-                    'content': content,
-                    'message': 'No executable Python block found. Use exactly one fenced ```python code block for ACTION, or final ANSWER outside code.',
-                    'error_code': 'missing_python_block',
-                }
-            if len(matches) > 1:
-                return {
-                    'status': False,
-                    'content': content,
-                    'message': f'Found {len(matches)} Python code blocks. Use exactly one ACTION code block.',
-                    'error_code': 'multiple_python_blocks',
-                }
+            
+            start_pos = content.find("```python")
+            if start_pos != -1:
+                content = content[start_pos+len("```python"):]
 
-            program = matches[0].strip()
-            if not program:
-                return {
-                    'status': False,
-                    'content': program,
-                    'message': "The Python code block is empty.",
-                    'error_code': 'empty_python_block',
-                }
-            compile(program, "prog.py", "exec")
-            return {'status': True, 'content': program, 'message': 'Parsing succeeded.', 'error_code': ''}
+            end_pos = content.find("```")
+            if end_pos != -1:
+                content = content[:end_pos]
+            
+            if start_pos == -1 or end_pos == -1:
+                return {'status': False, 'content': content, 'message': 'Program is NOT enclosed in ```python``` properly.', 'error_code': 'unknown'}
+            if len(content) > 0:
+                compile(content, "prog.py", "exec")
+                return {'status': True, 'content': content, 'message': 'Parsing succeeded.', 'error_code': ''}
+            else:
+                return {'status': False, 'content': content, 'message': "The content is empty, or it failed to parse the content correctly.", 'error_code': 'unknown'}
         except Exception as err:
-            return {'status': False, 'content': content, 'message': f"Unexpected {type(err)}: {err}.", 'error_code': 'python_compile_error'}
+            return {'status': False, 'content': content, 'message': f"Unexpected {type(err)}: {err}.", 'error_code': 'unknown'}
     
 def main():
     parser = Parser()

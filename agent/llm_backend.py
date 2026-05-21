@@ -359,10 +359,6 @@ class LocalQwen3VLClient:
         self.total_usage_summary["total_tokens"] += total_tokens
         self.actual_usage_summary = dict(self.total_usage_summary)
 
-    def clear_usage_summary(self) -> None:
-        self.total_usage_summary = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        self.actual_usage_summary = dict(self.total_usage_summary)
-
     def create(self, messages: Optional[List[Dict[str, Any]]] = None, context: Any = None, **kwargs: Any) -> Dict[str, Any]:
         del context
         if not messages:
@@ -372,7 +368,7 @@ class LocalQwen3VLClient:
         max_new_tokens = int(
             kwargs.pop(
                 "max_new_tokens",
-                os.environ.get("VISUAL_SKETCHPAD_MAX_NEW_TOKENS", "8192"),
+                os.environ.get("VISUAL_SKETCHPAD_MAX_NEW_TOKENS", "512"),
             )
         )
         temperature = kwargs.pop("temperature", None)
