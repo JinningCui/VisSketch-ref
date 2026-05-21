@@ -166,7 +166,7 @@ def run_agent(
         prompt_generator = prompt_generator,
         parser = parser,
         executor = executor,
-        memory_agent=MemoryOrganizerAgent(memory_format, llm_runtime.client, task_directory),
+        memory_agent=MemoryOrganizerAgent(memory_format, llm_runtime.client, task_directory, task_name=task_name),
     )
     
     # running the planning experiment

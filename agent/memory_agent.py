@@ -13,7 +13,19 @@ MEMORY_SYSTEM_MESSAGE = """You are a dynamic memory organizer for a multimodal r
 Your job is to maintain an external, inspectable memory artifact from the visible task context, visible reasoning summaries, code actions, execution observations, generated files, and known errors.
 Do not solve the task independently and do not invent hidden chain-of-thought. Record concise, useful state only: evidence, variables, objects, relations, derived facts, uncertainties, revisions, and next-action hints.
 Preserve useful prior memory, correct stale or wrong claims, and remove irrelevant content.
+If the latest observation or visible assistant message contradicts the previous memory, explicitly revise the memory: move the old claim into revisions, replace it with the corrected state, and keep unresolved contradictions in open_issues rather than treating them as facts.
+Only promote a derived fact when it is supported by execution output, explicit symbolic calculation, or visible evidence. Mark uncertain claims as tentative.
 """
+
+
+GATED_SYMBOLIC_TASKS = {
+    "graph_connectivity",
+    "graph_maxflow",
+    "graph_isomorphism",
+    "math_breakpoint",
+    "math_convexity",
+    "math_parity",
+}
 
 
 def _truncate(text: str, limit: int = 8000) -> str:
@@ -156,10 +168,17 @@ def _render_image_memory(payload: Dict[str, Any], path: Path) -> None:
 
 
 class MemoryOrganizerAgent:
-    def __init__(self, memory_format: Optional[str], llm_client: Optional[object], working_dir: str) -> None:
+    def __init__(
+        self,
+        memory_format: Optional[str],
+        llm_client: Optional[object],
+        working_dir: str,
+        task_name: Optional[str] = None,
+    ) -> None:
         self.memory_format = memory_format
         self.llm_client = llm_client
         self.working_dir = Path(working_dir)
+        self.task_name = task_name
         self.step = 0
         self.previous_text = ""
         self.previous_summary = ""
@@ -208,6 +227,12 @@ class MemoryOrganizerAgent:
             ),
         }[self.memory_format]
         return f"""{artifact_contract}
+
+Memory revision rules:
+- Correct stale or wrong previous-memory claims when the latest observation contradicts them.
+- Put corrected claims in retained_state or derived_facts only when supported.
+- Put discarded or corrected claims in revisions.
+- Put unresolved contradictions or missing evidence in open_issues.
 
 Task prompt:
 {_truncate(task_prompt, 5000)}
@@ -301,9 +326,50 @@ Generated or referenced files from latest execution:
         save_json(self.working_dir / "memory_index.json", self.records)
         return {**record, "prompt_payload": prompt_payload}
 
-    def format_feedback(self, record: Optional[Dict[str, Any]]) -> str:
+    def _previous_memory_has_open_issue(self) -> bool:
+        if not self.previous_text:
+            return False
+        lowered = self.previous_text.lower()
+        if "open_issues" not in lowered and "open issues" not in lowered:
+            return False
+        return not any(
+            marker in lowered
+            for marker in [
+                '"open_issues": []',
+                "<h2>open issues</h2><ul></ul>",
+                "<h2>open issues</h2><pre></pre>",
+            ]
+        )
+
+    def should_inject_full(self, record: Optional[Dict[str, Any]], generated_files=None, stage: str = "") -> bool:
+        if not record:
+            return False
+        if self.task_name not in GATED_SYMBOLIC_TASKS:
+            return True
+        generated_files = list(generated_files or [])
+        if generated_files:
+            return True
+        if "error" in (stage or ""):
+            return True
+        if self._previous_memory_has_open_issue():
+            return True
+        # For simple symbolic/math/graph tasks, avoid injecting full memory on
+        # the first successful step. If the task continues, memory becomes useful
+        # as external state for the second and later reasoning steps.
+        return int(record.get("step", 0)) > 0
+
+    def format_feedback(self, record: Optional[Dict[str, Any]], full: bool = True) -> str:
         if not record:
             return ""
+        if not full:
+            return (
+                "\n\nDYNAMIC MEMORY SUMMARY:\n"
+                f"Memory format: {record['format']}\n"
+                f"Memory path: {Path(record['path']).name}\n"
+                f"Memory summary: {record['summary']}\n"
+                "Full memory was not injected for this simple symbolic/math/graph step to avoid unnecessary context noise. "
+                "If the task continues, if an error occurs, if evidence files are generated, or if open issues remain, the full memory will be provided.\n"
+            )
         payload = _truncate(record.get("prompt_payload", ""), 9000)
         return (
             "\n\nDYNAMIC MEMORY UPDATE:\n"

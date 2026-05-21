@@ -48,7 +48,12 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
             generated_files=file_paths or [],
             stage=stage,
         )
-        return reply + self.memory_agent.format_feedback(record)
+        full_memory = self.memory_agent.should_inject_full(
+            record,
+            generated_files=file_paths or [],
+            stage=stage,
+        )
+        return reply + self.memory_agent.format_feedback(record, full=full_memory)
 
     def receive(
         self,

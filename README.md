@@ -52,7 +52,7 @@ Memory Organizer Agent
   |
   |-- reads visible assistant message, observation, generated files, and previous memory
   |-- writes memory_step_000.html / .json / .png
-  |-- appends the memory artifact back to the next reasoner observation
+  |-- appends either the full memory artifact or a compact memory summary back to the next reasoner observation
   v
 Reasoner continues
   |
@@ -66,6 +66,19 @@ Final answer extraction
   v
 Saved outputs
 ```
+
+## Memory Gating
+
+For simple symbolic/math/graph tasks, full memory injection is gated to avoid unnecessary context noise. The memory artifact is still written to disk, but the next reasoner observation receives only a compact one-line summary unless one of these conditions holds:
+
+- the task has continued beyond the first successful reasoning step
+- execution generated evidence files
+- the previous step had a parsing or execution error
+- the memory contains open issues or unresolved contradictions
+
+Geometry, vision, and board-state tasks receive full memory by default because their intermediate evidence is usually visual and multi-step.
+
+If the latest observation contradicts a prior memory claim, the Memory Agent is instructed to revise the artifact: move stale claims into `revisions`, replace them with supported facts, and keep unresolved contradictions in `open_issues`.
 
 ## Important Files
 
