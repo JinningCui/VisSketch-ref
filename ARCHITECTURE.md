@@ -1,284 +1,304 @@
-"""
-系统架构概览和设计文档
-"""
+# VisualSketchpad Agent Architecture
 
-# 四模块视觉推理系统 - 技术设计文档
+本文档描述当前 `VisualSketchpad-main/agent` 的实际执行逻辑。当前版本不是旧文档中的“四模块视觉推理系统”，而是以 VisualSketchpad 原始 ReACT/code-execution agent 为主体，并增加一个可选的外部动态 memory organization layer。
 
-## 1. 系统概述
+## 1. 总体目标
 
-本系统在 VisualSketchpad 的基础上，设计了一个四模块的结构化视觉推理框架，旨在解决以下问题：
+当前 agent 支持四类任务入口：
 
-1. **可解释性不足**：传统方法生成自由形式图片，难以追踪推理过程
-2. **错误诊断粗糙**：缺乏结构化的错误分类和定位
-3. **修正效率低**：每次都重新生成整个草图
-4. **停止策略简单**：固定迭代次数，无法自适应
+- `vision`: 图像 QA 类任务，读取 `request.json`，加载图像并可调用视觉工具。
+- `math`: 数学、图、棋盘等符号任务，读取 `example.json`。
+- `geo`: 几何任务，读取 `ex.json`。
+- `t2i_html`: 文生图/结构化 HTML 草稿任务，读取 `request.json`、`prompt.json`、`example.json` 或 `ex.json`。
 
-## 2. 核心模块设计
+核心设计原则是：
 
-### 2.1 Visual Thought Generator (视觉思考生成器)
+- 保持主 Reasoner 的 prompt、parser、execution loop 与 VisualSketchpad baseline 一致。
+- 通过 `--memory-format` 可选加入外部动态 memory，不改写主 Reasoner 的任务 prompt。
+- memory agent 只组织可见推理摘要、代码动作、执行 observation、证据文件和错误状态，不独立解题。
+- 对简单符号/数学/图任务使用 gating，避免无条件注入长 memory 导致上下文噪声。
 
-**职责**：生成结构化的视觉思考状态
+## 2. 主执行流程
 
-**输入**：
-- 用户问题 (query)
-- 上下文信息 (context)
+入口文件是 `agent/run_task.py`。它负责解析命令行参数、选择任务、设置输出目录，并按任务实例调用 `main.run_agent(...)`。
 
-**输出**：
-- VisualThoughtState 对象，包含：
-  - reasoning_step: 推理步骤描述
-  - objects: 视觉对象列表
-  - relations: 空间关系列表
-  - spatial_constraints: 空间约束列表
-  - sketch_instruction: 草图渲染指令
-
-**关键数据结构**：
-```python
-@dataclass
-class VisualObject:
-    id: str
-    type: str  # "point", "line", "circle", "box"
-    properties: Dict[str, Any]
-    label: Optional[str]
-
-@dataclass
-class SpatialRelation:
-    relation_type: str  # "left_of", "above", "inside"
-    subject: str
-    reference: str
-    confidence: float
-
-@dataclass
-class SpatialConstraint:
-    constraint_type: str  # "distance", "angle", "parallel"
-    objects: List[str]
-    value: Optional[Any]
-    unit: Optional[str]
+```text
+run_task.py
+  |
+  |-- resolve_tasks(...)
+  |-- iter_task_instances(...)
+  |-- _run_one_instance(...)
+        |
+        v
+main.run_agent(...)
+  |
+  |-- load task input
+  |-- choose prompt generator
+  |-- build Parser and CodeExecutor
+  |-- build LLM runtime
+  |-- create SketchpadUserAgent
+  |-- create MultimodalConversableAgent planner
+  |-- user.initiate_chat(planner, ...)
+  |-- save output.json / structured_trace.json / prediction_summary.json
+  |-- optional reflection update
 ```
 
-**优势**：
-- 可解析：JSON 格式，易于程序处理
-- 可检查：每个元素都有明确的语义
-- 可修改：支持局部编辑
-- 可解释：推理步骤明确
+## 3. Agent Loop
 
-### 2.2 Visual Thought Critic (视觉思考批判者)
+核心交互发生在 `agent/agent.py` 的 `SketchpadUserAgent.receive(...)`。
 
-**职责**：对视觉思考状态进行结构化错误诊断
+每一轮流程：
 
-**输入**：
-- 视觉思考状态 (visual_state)
-- 原始问题 (query)
-- 图像上下文 (image_context)
+1. 接收 planner 的消息。
+2. 使用 `Parser.parse(...)` 抽取代码块。
+3. 如果没有代码且消息包含 `TERMINATE`，停止。
+4. 如果解析失败，返回 parsing feedback。
+5. 如果解析成功，使用 `CodeExecutor.execute(...)` 执行代码。
+6. 根据执行结果返回 execution feedback。
+7. 如果启用了 memory agent，在 parsing/execution feedback 后追加 memory summary 或 full memory。
 
-**输出**：
-- ErrorDiagnosis 对象，包含：
-  - is_valid: 是否有效
-  - error_type: 错误类型（7种）
-  - error_location: 错误位置
-  - evidence: 错误证据
-  - revision_target: 修正建议
-  - confidence: 置信度
+简化流程图：
 
-**错误类型分类**：
-1. **PERCEPTION_ERROR**: 感知错误 - 看错原图或题目
-2. **GROUNDING_ERROR**: 对应错误 - 题目元素和草图元素对应错
-3. **SPATIAL_ERROR**: 空间错误 - 空间关系错误
-4. **GEOMETRIC_ERROR**: 几何错误 - 比例、角度、数量关系错
-5. **STATE_TRANSITION_ERROR**: 状态转换错误 - 多步推理状态更新错
-6. **ANSWER_CONSISTENCY_ERROR**: 答案一致性错误 - 答案和草图不一致
-7. **REDUNDANCY_ERROR**: 冗余错误 - 草图包含无关信息
-
-**优势**：
-- 精确定位：不是泛泛反思，而是具体指出错在哪里
-- 分类诊断：7种错误类型覆盖常见推理错误
-- 可操作性：提供具体的修正建议
-
-### 2.3 Local Visual Revision (局部视觉修订)
-
-**职责**：生成和应用局部修订操作
-
-**输入**：
-- 视觉思考状态 (visual_state)
-- 错误诊断 (error_diagnosis)
-- 原始问题 (query)
-
-**输出**：
-- 修订操作列表 (List[LocalRevision])
-- 修订后的视觉状态
-
-**操作类型**：
-- MOVE: 移动对象或关系
-- ADD: 添加新元素
-- DELETE: 删除元素
-- RELABEL: 更改标签
-- RESIZE: 调整大小
-- CONNECT/DISCONNECT: 连接/断开
-- REORDER: 重新排序
-- HIGHLIGHT: 高亮显示
-- ABSTRACT: 抽象简化
-
-**优势**：
-- 高效：只修改需要改的部分
-- 可追踪：每个修订操作都有明确记录
-- 稳定：不会因为修改一处而影响其他正确的部分
-
-### 2.4 Uncertainty-Guided Stopping (不确定性引导停止)
-
-**职责**：基于综合置信度做出停止决策
-
-**输入**：
-- 视觉思考状态
-- 错误诊断
-- 当前答案
-- 迭代次数
-- 历史状态
-
-**输出**：
-- 是否继续 (bool)
-- 停止决策 (StoppingDecision)
-- 置信度指标 (ConfidenceMetrics)
-
-**置信度指标**：
-1. **answer_confidence**: 答案置信度 (25%)
-2. **critic_confidence**: 批判者置信度 (20%)
-3. **sketch_consistency_score**: 草图一致性 (20%)
-4. **text_visual_alignment_score**: 文本-视觉对齐 (20%)
-5. **change_magnitude**: 变化幅度 (10%)
-6. **answer_stability**: 答案稳定性 (5%)
-
-**停止决策**：
-- CONTINUE_REFINEMENT: 继续优化
-- STOP_SUCCESS: 成功停止
-- FALLBACK_TO_DIRECT: 回退到直接答案
-
-**优势**：
-- 自适应：根据实际情况决定是否继续
-- 多维度：综合考虑多个置信度指标
-- 避免过度推理：简单问题不会浪费计算资源
-
-## 3. 系统工作流程
-
-```
-1. 初始化
-   ↓
-2. Visual Thought Generator 生成初始状态
-   ↓
-3. Visual Thought Critic 诊断错误
-   ↓
-4. Uncertainty-Guided Stopping 计算置信度
-   ↓
-5. 判断是否继续
-   ├─ 否 → 返回最终答案
-   └─ 是 → Local Visual Revision 生成修订
-       ↓
-       应用修订，更新状态
-       ↓
-       回到步骤 3
+```text
+Planner message
+  |
+  v
+Parser.parse(message)
+  |
+  |-- no code + TERMINATE --> stop
+  |
+  |-- parse error
+  |      |
+  |      v
+  |   parsing feedback
+  |      |
+  |      v
+  |   optional memory update
+  |
+  |-- code parsed
+         |
+         v
+      CodeExecutor.execute(code)
+         |
+         |-- error --> execution error feedback + optional memory update
+         |
+         |-- success --> execution success feedback + optional memory update
 ```
 
-## 4. 与原始 VisualSketchpad 的集成
+终止逻辑仍然使用 VisualSketchpad 原始的 `TERMINATE` 检查，不使用答案抽取结果控制 loop 停止。
 
-本系统可以作为 VisualSketchpad 的增强模块：
+## 4. Prompt 组件
 
-1. **保留原有功能**：
-   - 保留 ReACT agent 框架
-   - 保留 vision tools (detection, segmentation, depth)
-   - 保留 code execution 能力
+Prompt 生成器位于 `agent/prompt.py`：
 
-2. **增强推理能力**：
-   - 在原有基础上添加结构化状态表示
-   - 添加错误诊断和局部修订
-   - 添加自适应停止机制
+- `ReACTPrompt`: vision task 的默认 ReACT prompt。
+- `MathPrompt`: graph/math/chess 等任务 prompt。
+- `GeoPrompt`: geometry task prompt。
+- `HTMLVisualPrompt`: `t2i_html` 任务 prompt。
+- `MULTIMODAL_ASSISTANT_MESSAGE`: 默认 planner system message。
+- `HTML_VISUAL_ASSISTANT_MESSAGE`: HTML visual draft 任务的 system message。
 
-3. **集成方式**：
-   - 可以在 `agent.py` 中集成四模块系统
-   - 可以在 `prompt.py` 中添加结构化提示词
-   - 可以在 `main.py` 中调用四模块系统
+当前版本已经移除旧的 JSON draft wrapper 执行路径：
 
-## 5. 实现状态
+- 不再支持 `t2i_json` task type。
+- 不再使用 `JSONVisualPrompt`。
+- 不再使用 `--draft-format`。
+- 不再保留 `draft_validation.py` 和 `run_json_reasoning.py`。
 
-### 已完成：
-- ✅ 四个核心模块的框架设计
-- ✅ 数据结构定义
-- ✅ 主控制器实现
-- ✅ 示例代码
-- ✅ 文档
+因此，HTML/JSON/image 的对比实验现在不是通过改写主 Reasoner prompt 来实现，而是通过独立 memory agent 的 `--memory-format` 实现。
 
-### 待完成：
-- ⏳ LLM 调用集成（需要连接到实际的 LLM API）
-- ⏳ 草图渲染功能
-- ⏳ 与 VisualSketchpad 原有代码的深度集成
-- ⏳ 在实际数据集上的评估
+## 5. Dynamic Memory Organization Layer
 
-## 6. 使用示例
+动态 memory 由 `agent/memory_agent.py` 中的 `MemoryOrganizerAgent` 实现。它在 `main.py` 中被注入到 `SketchpadUserAgent`：
 
 ```python
-from four_module_system import FourModuleVisualReasoningSystem
-from config import llm_config
-
-# 初始化
-system = FourModuleVisualReasoningSystem(
-    llm_config=llm_config,
-    config={
-        'confidence_threshold': 0.85,
-        'max_iterations': 5,
-        'min_iterations': 1
-    }
+memory_agent=MemoryOrganizerAgent(
+    memory_format,
+    llm_runtime.client,
+    task_directory,
+    task_name=task_name,
 )
-
-# 运行
-result = system.run(
-    query="Your question here",
-    image_context={"image_path": "image.jpg"}
-)
-
-# 查看结果
-print(f"Answer: {result['final_answer']}")
-print(f"Iterations: {result['total_iterations']}")
-print(system.get_reasoning_trace())
 ```
 
-## 7. 论文贡献点
+这意味着 memory agent 默认使用与主 Reasoner 相同的 LLM client、API 配置和模型。例如运行时指定 `--backend api --model gpt-4o`，则 Reasoner 和 memory agent 都使用 `gpt-4o`。
 
-1. **Structured Visual Thought State**: 
-   - 提出可解析的视觉思考中间表示
-   - 比纯图片更易于分析和修改
+### 5.1 Memory 输入
 
-2. **Typed Visual Error Diagnosis**: 
-   - 提出7种视觉推理错误类型
-   - 精确定位和诊断错误
+每次更新 memory 时，memory agent 接收：
 
-3. **Local Visual Revision**: 
-   - 提出局部编辑操作
-   - 避免全局重生成的低效
+- 初始任务 prompt。
+- 当前 planner 的可见消息。
+- parser 或 executor 返回的 observation/feedback。
+- 本轮代码执行生成或引用的文件路径。
+- 当前阶段：`parsing_error`、`execution_error`、`execution_success` 等。
 
-4. **Selective Visual Reflection**: 
-   - 提出选择性视觉反思
-   - 自适应停止避免过度推理
+### 5.2 Memory 输出格式
 
-## 8. 评估指标
+通过 `--memory-format` 控制：
 
-建议的评估指标：
+- `html`: 生成 `memory_step_XXX.html`。
+- `json`: 生成 `memory_step_XXX.json`。
+- `image`: 生成 `memory_step_XXX.png`。
+- `None`: 禁用 memory layer。
 
-1. **准确率**：最终答案的正确率
-2. **效率**：平均迭代次数
-3. **置信度校准**：置信度与准确率的相关性
-4. **修订有效性**：修订操作是否真的修正了错误
-5. **可解释性**：人类评估推理过程的可理解性
+每轮还会维护：
 
-## 9. 未来扩展方向
+- `memory_index.json`: 当前 case 的 memory artifact 索引。
+- feedback 中的 `DYNAMIC MEMORY SUMMARY` 或 `DYNAMIC MEMORY UPDATE`。
 
-1. **多模态融合**：更好地融合文本和视觉信息
-2. **增量学习**：从错误中学习，改进诊断能力
-3. **协作推理**：多个 agent 协作进行视觉推理
-4. **工具学习**：自动学习使用新的视觉工具
+### 5.3 Memory 内容约束
 
-## 10. 总结
+memory agent 的职责不是重新解题，而是维护外部、可检查的动态状态：
 
-本系统通过四个模块的协同工作，实现了：
-- 更强的可解释性
-- 更精确的错误诊断
-- 更高效的修正
-- 更智能的停止决策
+- evidence
+- variables / objects
+- relations / constraints
+- derived facts
+- revisions
+- open issues
+- next-action hints
 
-这些改进使得视觉推理系统更加实用和可靠，也更容易被学术界接受。
+当最新 observation 与旧 memory 冲突时，memory agent 应修正旧 memory：把旧错误声明放入 revisions，把仍不确定的问题放入 open issues，不把未验证内容提升为事实。
+
+## 6. Gating 机制
+
+为了避免 memory 对简单符号任务造成上下文噪声，`MemoryOrganizerAgent.should_inject_full(...)` 对部分任务启用 gating。
+
+当前 gated tasks：
+
+```text
+graph_connectivity
+graph_maxflow
+graph_isomorphism
+math_breakpoint
+math_convexity
+math_parity
+```
+
+对这些任务，只有满足以下条件之一时才注入 full memory：
+
+- 任务已经超过第一步，memory 开始具备跨步状态价值。
+- 本轮生成了 evidence files。
+- 本轮出现 parsing/execution error。
+- memory 中存在 open issues。
+
+否则只注入一行式 memory summary，避免把简单问题的上下文变长。
+
+非 gated tasks 默认注入 full memory。
+
+## 7. 文件与模块职责
+
+```text
+agent/
+  run_task.py
+    批量任务入口；支持 --task、--workers、--backend、--model、--memory-format。
+
+  main.py
+    单个 case 的主入口；加载数据、创建 prompt/parser/executor/planner/user agent、保存输出。
+
+  agent.py
+    SketchpadUserAgent；负责 parse-execute-feedback loop，并在反馈中接入 memory。
+
+  memory_agent.py
+    外部动态 memory 组织层；生成 HTML/JSON/image memory artifact，并实现 gating。
+
+  prompt.py
+    主 Reasoner prompt 定义；保持 VisualSketchpad baseline 的任务思考逻辑。
+
+  parse.py
+    解析 planner 输出中的代码块。
+
+  execution.py
+    Jupyter/code execution 和文件路径追踪。
+
+  llm_backend.py
+    API/local backend 抽象。
+
+  config.py
+    backend、model、API key/base URL 和视觉工具地址配置。
+
+  task_registry.py
+    任务名、输入文件、label key、输出目录规则。
+
+  utils.py
+    trace 构建、answer 抽取、JSON 保存等工具函数。
+```
+
+## 8. 输出结构
+
+`run_task.py` 默认把结果写入：
+
+```text
+outputs/<backend>/<model>/
+```
+
+如果启用 memory：
+
+```text
+outputs/<backend>/<model>/memory_<format>/
+```
+
+单个 case 目录中常见文件：
+
+```text
+output.json
+full_trajectory.json
+structured_trace.json
+prediction_summary.json
+usage_summary.json
+run.log
+memory_index.json              # 启用 memory 时
+memory_step_000.html/json/png  # 启用 memory 时
+```
+
+这些都是运行产物，不应作为代码提交。
+
+## 9. 运行示例
+
+API backend：
+
+```bash
+cd agent
+python run_task.py \
+  --task graph_connectivity graph_maxflow \
+  --backend api \
+  --model gpt-4o \
+  --base-url https://api.kksj.org/v1 \
+  --api-key "$VISUAL_SKETCHPAD_API_KEY" \
+  --memory-format html \
+  --workers 2
+```
+
+禁用 memory，运行 baseline：
+
+```bash
+cd agent
+python run_task.py \
+  --task graph_connectivity \
+  --backend api \
+  --model gpt-4o
+```
+
+JSON memory：
+
+```bash
+cd agent
+python run_task.py \
+  --task math_convexity \
+  --backend api \
+  --model gpt-4o \
+  --memory-format json
+```
+
+## 10. 与 Baseline 的变量控制
+
+当前实验设计中，`VisualSketchpad-main/agent` 的主推理逻辑与 baseline 的差异应集中在：
+
+- 是否启用外部 dynamic memory organization layer。
+- memory 格式：`html`、`json`、`image`。
+- gated symbolic tasks 是否注入 full memory。
+
+不应再通过 draft wrapper 改写主 Reasoner prompt 来比较 HTML/JSON。这样可以更直接地测试：
+
+> 将多模态模型的思考过程视为动态记忆时，HTML/JSON/image 哪种外部组织形式更适合作为可检查、可更新、可复用的视觉/结构化草稿。
+

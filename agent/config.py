@@ -106,11 +106,11 @@ def build_llm_runtime_config(
     )
 
 
-def validate_llm_config(backend: Optional[str] = None):
+def validate_llm_config(backend: Optional[str] = None, api_key: Optional[str] = None):
     resolved_backend = get_backend_mode(backend)
     if resolved_backend == "api":
-        api_key = os.environ.get("VISUAL_SKETCHPAD_API_KEY") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
+        resolved_api_key = api_key or os.environ.get("VISUAL_SKETCHPAD_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not resolved_api_key:
             raise ValueError(
                 "API backend selected but no API key was found. "
                 "Set VISUAL_SKETCHPAD_API_KEY or OPENAI_API_KEY, or switch to backend=local."

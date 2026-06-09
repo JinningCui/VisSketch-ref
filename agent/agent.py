@@ -34,12 +34,14 @@ class SketchpadUserAgent(MultimodalUserProxyAgent):
     ) -> str:
         if self.memory_agent is None or not self.memory_agent.enabled:
             return reply
+        reflection_text = self.memory_agent.reflect_on_step(message, observation_text)
         record = self.memory_agent.update(
             task_prompt=self.current_task_prompt,
             assistant_message=message,
             observation_text=observation_text,
             generated_files=file_paths or [],
             stage=stage,
+            reflection_text=reflection_text,
         )
         full_memory = self.memory_agent.should_inject_full(
             record,

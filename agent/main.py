@@ -132,7 +132,7 @@ def run_agent(
         parser = Parser()
         executor = CodeExecutor(working_dir=task_directory)
     
-    validate_llm_config(backend=backend)
+    validate_llm_config(backend=backend, api_key=api_key)
     llm_runtime = build_llm_runtime_config(
         backend=backend,
         model=model,
