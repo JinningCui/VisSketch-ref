@@ -44,34 +44,37 @@ def annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Tensor
 
 
 def detection(image, text, box_threshold=0.35, text_threshold=0.25):
-    
+    import json as _json
     image_source, image = load_image(image)
+    import torch as _torch
+    _device = "mps" if _torch.backends.mps.is_available() else "cpu"
     boxes, logits, phrases = predict(
         model=model,
         image=image,
         caption=text,
         box_threshold=box_threshold,
-        text_threshold=text_threshold
+        text_threshold=text_threshold,
+        device=_device,
     )
-    
-    ret_json = {
-        "boxes": boxes,
-        "logits": logits,
-        "phrases": phrases
-    }
-    
+
+    ret_json_str = _json.dumps({
+        "boxes": boxes.tolist() if hasattr(boxes, "tolist") else list(boxes),
+        "logits": logits.tolist() if hasattr(logits, "tolist") else list(logits),
+        "phrases": list(phrases),
+    })
+
     annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=range(1, len(boxes)+1), phrases=phrases)
-    
+
     annotated_pil_image = Image.fromarray(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB))
-    
-    return annotated_pil_image, ret_json
+
+    return annotated_pil_image, ret_json_str
 
 
 demo = gr.Interface(fn=detection, inputs=[gr.Image(type="filepath"),
                                           "text",
                                           gr.Number(value=0.35),
                                           gr.Number(value=0.25)],
-                    outputs=[gr.Image(type="pil"), "json"]
+                    outputs=[gr.Image(type="pil"), gr.Textbox()]
                     )
                     
 demo.launch(share=True, server_name="localhost", server_port=8081)

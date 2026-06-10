@@ -41,10 +41,68 @@ def _get_som_client():
     return som_client
 
 
+class _GDDirectClient:
+    """Direct HTTP client for GroundingDINO Gradio server.
+
+    Bypasses gradio_client schema-parsing (which fails on additionalProperties:false
+    in gradio_client 1.3.0 + Gradio 4.x). Uses raw HTTP against /upload + /run/predict.
+    """
+
+    def __init__(self, address: str):
+        import requests as _req
+        self._address = address.rstrip("/")
+        _req.get(self._address, timeout=5)  # connectivity check
+
+    def predict(self, image_path_or_file, text, box_threshold=0.35, text_threshold=0.25):
+        import requests as _req, json as _json
+        # Accept: plain string path, gradio_client FileData dict, or object with .path
+        if isinstance(image_path_or_file, dict):
+            path = str(image_path_or_file.get("path") or image_path_or_file.get("name", ""))
+        elif hasattr(image_path_or_file, "path"):
+            path = str(image_path_or_file.path)
+        else:
+            path = str(image_path_or_file)
+        with open(path, "rb") as f:
+            up = _req.post(
+                f"{self._address}/upload",
+                files={"files": (os.path.basename(path), f, "image/jpeg")},
+                timeout=30,
+            )
+        up.raise_for_status()
+        uploaded_name = up.json()[0]
+        # Gradio 4.x FileData uses "path"; Gradio 3.x used "name"
+        payload = {"data": [{"path": uploaded_name, "is_file": True},
+                             text, box_threshold, text_threshold]}
+        pr = _req.post(f"{self._address}/run/predict", json=payload, timeout=120)
+        pr.raise_for_status()
+        outputs = pr.json()["data"]
+        img_info = outputs[0]
+        annotated_path = path
+        if isinstance(img_info, dict):
+            local_path = img_info.get("path", "")
+            if local_path and os.path.exists(local_path):
+                annotated_path = local_path
+            else:
+                url_path = img_info.get("url") or img_info.get("name", "")
+                if url_path:
+                    img_resp = _req.get(f"{self._address}/file={url_path}", timeout=30)
+                    if img_resp.status_code == 200:
+                        annotated_path = path + "_annotated.jpg"
+                        with open(annotated_path, "wb") as f:
+                            f.write(img_resp.content)
+        return [annotated_path, outputs[1]]
+
+
 def _get_gd_client():
     global gd_client
     if gd_client is None:
-        gd_client = _get_client("GroundingDINO", GROUNDING_DINO_ADDRESS)
+        try:
+            gd_client = _GDDirectClient(GROUNDING_DINO_ADDRESS)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to connect to GroundingDINO server at {GROUNDING_DINO_ADDRESS}. "
+                "Start the server first or update the address in the environment/config."
+            ) from exc
     return gd_client
 
 
@@ -149,14 +207,17 @@ def detection(image, objects, box_threshold:float = 0.35, text_threshold:float =
         image = tmp_file.name
     
         outputs = _get_gd_client().predict(file(image), ', '.join(objects), box_threshold, text_threshold)
-        
+
         # process images
         original_image = Image.open(image)
         output_image = Image.open(outputs[0])
         output_image = AnnotatedImage(output_image, original_image)
-        
-        # process boxes
-        boxes = outputs[1]['boxes']
+
+        # process boxes (server returns JSON string via gr.Textbox to avoid schema compat issue)
+        import json as _json
+        raw = outputs[1]
+        boxes_data = (_json.loads(raw) if isinstance(raw, str) else raw)['boxes']
+        boxes = boxes_data
         processed_boxes = []
         
         for box in boxes:

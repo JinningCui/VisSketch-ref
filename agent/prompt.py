@@ -214,6 +214,66 @@ def overlay_images(background_img, overlay_img, alpha=0.3, bounding_box=[0, 0, 1
         overlayed_image = overlay_images(depth_map, image, alpha=0.3)
         display(overlayed_image)
     \"\"\"
+
+def sketch_canvas(items, output_path, width=960, height=660, title=""):
+    \"\"\"Create a spatial HTML/SVG annotation canvas that places multiple images side-by-side,
+    connects them with arrows, and adds bounding-box overlays, labels, and callout notes.
+    Use this when you want to annotate or compare images in a sketch-pad style rather than
+    displaying them one by one.  The output is a self-contained HTML file with embedded images.
+
+    Supported item types in `items` list:
+      - image:  {\"type\":\"image\", \"id\":\"<id>\", \"path\":\"<path>\", \"x\":<px>, \"y\":<px>, \"width\":<px>,
+                 \"panel\":True, \"panel_title\":\"<label>\", \"panel_color\":\"<hex>\"}
+      - arrow:  {\"type\":\"arrow\", \"x1\":<px>, \"y1\":<px>, \"x2\":<px>, \"y2\":<px>,
+                 \"style\":\"solid\"|\"dashed\"|\"dotted\", \"color\":\"<hex>\", \"label\":\"<text>\", \"curve\":0.3}
+      - bbox:   canvas-absolute: {\"type\":\"bbox\", \"x\":<px>, \"y\":<px>, \"w\":<px>, \"h\":<px>,
+                                  \"color\":\"<hex>\", \"label\":\"<text>\"}
+                OR image-relative: {\"type\":\"bbox\", \"image_id\":\"<id>\", \"rel\":[rx,ry,rw,rh],
+                                    \"color\":\"<hex>\", \"label\":\"<text>\"}
+      - text:   {\"type\":\"text\", \"x\":<px>, \"y\":<px>, \"content\":\"<text>\",
+                 \"size\":13, \"bg\":\"<hex>\"}
+      - circle: {\"type\":\"circle\", \"cx\":<px>, \"cy\":<px>, \"r\":<px>,
+                 \"color\":\"<hex>\", \"fill\":\"none\", \"label\":\"<text>\"}
+
+    Args:
+        items (List[dict]): list of annotation items (see above).
+        output_path (str): path to write the HTML file (e.g. \"sketch_step1.html\").
+        width (int): canvas width in pixels. Default 960.
+        height (int): canvas height in pixels. Default 660.
+        title (str): optional title shown above the canvas.
+
+    Returns:
+        str: absolute path to the written HTML file.
+
+    Example:
+        # Show original image and a zoom crop side-by-side with annotation
+        path = sketch_canvas([
+            {\"type\": \"image\", \"id\": \"orig\", \"path\": \"image_1.jpg\",
+             \"x\": 20, \"y\": 80, \"width\": 420, \"panel\": True, \"panel_title\": \"Original\"},
+            {\"type\": \"image\", \"id\": \"zoom\", \"path\": \"zoom_crop.png\",
+             \"x\": 500, \"y\": 80, \"width\": 340, \"panel\": True, \"panel_title\": \"Zoom\"},
+            {\"type\": \"arrow\", \"x1\": 440, \"y1\": 220, \"x2\": 500, \"y2\": 220,
+             \"style\": \"dashed\", \"color\": \"#e11d48\"},
+            {\"type\": \"bbox\", \"image_id\": \"zoom\", \"rel\": [0.05, 0.35, 0.55, 0.30],
+             \"color\": \"#e11d48\", \"label\": \"target\"},
+            {\"type\": \"text\", \"x\": 20, \"y\": 520,
+             \"content\": \"The 22% value is in the left donut.\", \"bg\": \"#fef9c3\"},
+        ], output_path=\"sketch_step1.html\")
+        print(f\"SKETCH_PATH: {path}\")
+    \"\"\"
+
+# --- When to use sketch_canvas in your reasoning ---
+# Use sketch_canvas when you have MULTIPLE images to compare or relate spatially:
+#   - After cropping a region: place original + crop side-by-side, connect with a dashed arrow
+#   - When comparing two images: annotate differences with text notes on each image
+#   - When you have key findings: place the evidence image and add a text note explaining what you see
+# Do NOT use bbox or circle items -- spatial coordinates cannot be reliably inferred.
+# Only use: image, arrow, text.
+# IMPORTANT: Print the returned path so it is captured as a generated file:
+#   canvas_path = sketch_canvas([...], output_path=\"canvas_step1.html\")
+#   print(f\"SKETCH_CANVAS: {canvas_path}\")
+# The canvas and its annotations will be automatically incorporated into the
+# next-step memory so you can build on it in subsequent reasoning steps.
 ```
 # GOAL #: Based on the above tools, I want you to reason about how to solve the # USER REQUEST # and generate the actions step by step (each action is a python jupyter notebook code block) to solve the request.
 You may need to use the tools above to process the images and make decisions based on the visual outputs of the previous code blocks.
@@ -224,6 +284,7 @@ The jupyter notebook has already executed the following code to import the neces
 from PIL import Image
 from IPython.display import display
 from tools import *
+from sketch_canvas import sketch_canvas
 ```
 
 # REQUIREMENTS #:
@@ -552,17 +613,24 @@ from tools import *
 # REQUIREMENTS #:
 1. The generated actions can resolve the given user request # USER REQUEST # perfectly. The user request is reasonable and can be solved. Try your best to solve the request.
 2. Before using any geometry formula, first extract and explicitly list the symbolic givens from the diagram logic form, such as known lengths, known angles, parallel/perpendicular relations, tangent relations, and equal segments.
-3. Treat the matplotlib coordinates as a schematic drawing by default. Do NOT use raw plotted coordinates, pixel distances, midpoint distances, or the distance formula on plotted points as true geometric lengths unless the problem explicitly states that it is a coordinate-geometry problem.
+3. ABSOLUTE RULE — matplotlib coordinates are for DRAWING ONLY, NEVER for computing lengths:
+   The `points = {...}` dictionary contains DISPLAY-ONLY pixel coordinates for rendering the schematic. They are NOT the actual geometric values.
+   FORBIDDEN (always produces wrong answers):
+     np.linalg.norm(np.array(points["A"]) - np.array(points["B"]))  # pixel distance ≠ geometric length
+     abs(points["A"][1] - points["D"][1])                           # pixel y-diff ≠ geometric length
+   CORRECT: derive ALL lengths from the symbolic logic form using math/trigonometry only:
+     import math; AC = BC * math.sin(math.radians(angle_B))
 4. If the symbolic givens from the diagram logic form disagree with the apparent plotted lengths, trust the symbolic givens and treat the drawing as not to scale.
 5. For trapezoids, circles, similar triangles, angle-chasing, and other standard Euclidean geometry problems, solve from the stated geometric relations first; use the drawing only to decide what auxiliary line or configuration to inspect.
-6. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
+6. MANDATORY SANITY CHECK: verify your computed value matches one of the given choices. If it does not match any choice, you used pixel coordinates instead of geometric formulas — discard and resolve using only symbolic givens.
+7. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
 3. If the problem provides multiple-choice options, your FINAL ANSWER must include the choice letter only, such as ANSWER: (A). You may briefly justify it before the final answer, but the final answer itself must contain the option letter.
 4. Do not invent missing measurements. Only use lengths, angles, arcs, and radii explicitly given in the text, logic form, diagram code, or derived from valid geometry theorems.
 5. Do not treat a segment length like SU as an arc length unless the prompt explicitly says it is an arc length.
 6. Before using a formula, verify the object type: angle, arc, chord, side length, area, circumference, or radius.
 7. If the problem asks for auxiliary lines, propose them first; if no auxiliary line is needed, state that explicitly and solve using a valid theorem.
-8. For chess `winner_id` tasks, use text + Python code + HTML intermediate drafts. ACTION 0 must be a Python code block that writes a self-contained HTML file as the initial visual sketchpad before making any conclusion.
-9. For chess `winner_id` tasks, each HTML draft must include the board rendered from the FEN, FEN text, side to move, terminal-status signals, legal-move summary, and a concise evidence section. The code must print `HTML_DRAFT_PATH: <path>` and `HTML_DRAFT_SUMMARY: <summary>`.
+8. For chess `winner_id` tasks, ACTION 0 MUST: (a) render the board as a PNG image using `chess.svg.board()` + `cairosvg.svg2png()` and `display()` it so it becomes visual evidence in memory, AND (b) print python-chess terminal-status signals (is_checkmate, is_stalemate, legal_moves, is_check), AND (c) write an HTML draft and print `HTML_DRAFT_PATH: <path>`.
+9. For chess `winner_id` tasks, the board PNG must be rendered using `chess.svg` + `cairosvg` (NOT matplotlib Unicode) and shown via `display(PIL_image)` — this is required so the image appears in the memory canvas. The HTML draft must also include the SVG board, FEN, side-to-move, and terminal-status signals.
 10. For chess `winner_id` tasks, after the initial HTML draft, every additional non-trivial action should, when feasible, write an updated HTML draft tied to the current reasoning step, such as check status, legal-move information, attacked-square overlays, material balance, king safety, or another board-centered visualization.
 11. For chess `winner_id` tasks, do not guess from the picture alone. After writing the HTML board draft, use `python-chess` APIs on the FEN to determine terminal status, such as `is_checkmate()`, `is_stalemate()`, `is_insufficient_material()`, `is_check()`, and the number of legal moves, and combine that rules-based evidence with the HTML draft before answering.
 
@@ -654,17 +722,19 @@ ANSWER: yes, there is a path. TERMINATE
 # EXAMPLE: Solving a winner id problem
 # USER REQUEST #: Given the following FEN of a chess game, predict the eventual winner of the game: white, black, or draw.
 # RESULT #:
-THOUGHT 0: I should first create an HTML visual draft from the FEN. The Python code will write a self-contained HTML file containing an SVG board plus `python-chess` terminal-status signals, so the first step gives both a visual sketch and rules-based evidence.
+THOUGHT 0: I should first render the board as a PNG image (so it becomes visual evidence) and collect python-chess terminal-status signals to determine the winner.
 ACTION 0:
 ```python
-import chess
-import chess.svg
-import html
+import chess, chess.svg, html, io
+from cairosvg import svg2png
 from pathlib import Path
+from PIL import Image as PILImage
+from IPython.display import display
 
 fen = "1r1q1rk1/1b2b1Qp/4pp1B/pp1nP3/2pPN3/P1P5/1PB3PP/R4RK1 b - - 0 18"
 board = chess.Board(fen)
 
+# ── terminal-status signals ──────────────────────────────────────────────
 signals = {{
     "turn": "white" if board.turn == chess.WHITE else "black",
     "is_checkmate": board.is_checkmate(),
@@ -673,56 +743,38 @@ signals = {{
     "legal_moves": board.legal_moves.count(),
     "is_check": board.is_check(),
 }}
+print("signals:", signals)
+
+# ── render board as a PNG image so it appears as visual evidence ─────────
+svg_data = chess.svg.board(board, size=400)
+png_bytes = svg2png(bytestring=svg_data)
+board_img = PILImage.open(io.BytesIO(png_bytes)).copy()
+display(board_img)   # tracked by executor → shows in memory HTML
+
+# ── write HTML draft for detailed inspection ─────────────────────────────
 board_svg = chess.svg.board(board, size=420)
-rows = "".join(
-    f"<tr><th>{{html.escape(str(k))}}</th><td>{{html.escape(str(v))}}</td></tr>"
-    for k, v in signals.items()
-)
-evidence = (
-    "Black is to move, is in check, and has zero legal moves; this is checkmate, "
-    "so White is the winner."
-)
-doc = f'''<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Winner ID Visual Draft</title>
-  <style>
-    body {{{{ font-family: Arial, sans-serif; margin: 24px; color: #1f2933; }}}}
-    .layout {{{{ display: grid; grid-template-columns: 450px 1fr; gap: 24px; align-items: start; }}}}
-    .panel {{{{ border: 1px solid #c9d1d9; border-radius: 6px; padding: 14px; }}}}
-    table {{{{ border-collapse: collapse; width: 100%; }}}}
-    th, td {{{{ border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; }}}}
-    .answer {{{{ font-weight: 700; color: #0f5132; }}}}
-    code {{{{ overflow-wrap: anywhere; }}}}
-  </style>
-</head>
-<body>
-  <h1>Chess Winner ID Visual Draft</h1>
+rows = "".join(f"<tr><th>{{html.escape(str(k))}}</th><td>{{html.escape(str(v))}}</td></tr>"
+               for k, v in signals.items())
+doc = f'''<!doctype html><html><body>
+  <h1>Chess Winner ID</h1>
   <p><strong>FEN:</strong> <code>{{html.escape(fen)}}</code></p>
-  <div class="layout">
-    <section class="panel">{{board_svg}}</section>
-    <section class="panel">
-      <h2>Rules Signals</h2>
-      <table>{{rows}}</table>
-      <h2>Evidence</h2>
-      <p>{{html.escape(evidence)}}</p>
-      <p class="answer">Predicted winner: white</p>
-    </section>
-  </div>
-</body>
-</html>'''
+  <div style="display:grid;grid-template-columns:450px 1fr;gap:24px">
+    <div>{{board_svg}}</div>
+    <div><table>{{rows}}</table></div>
+  </div></body></html>'''
 path = Path("visual_draft_step_0.html")
 path.write_text(doc, encoding="utf-8")
 print(f"HTML_DRAFT_PATH: {{path}}")
-print("HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is checkmated.")
+print("HTML_DRAFT_SUMMARY: board PNG + SVG with terminal-status signals; black checkmated.")
 ```
 OBSERVATION: Execution success. The output is as follows:
+signals: {{'turn': 'black', 'is_checkmate': True, 'is_stalemate': False, 'is_insufficient_material': False, 'legal_moves': 0, 'is_check': True}}
+<PIL.PngImagePlugin.PngImageFile image mode=RGB size=400x400>
 HTML_DRAFT_PATH: visual_draft_step_0.html
-HTML_DRAFT_SUMMARY: board SVG plus terminal-status table shows black is checkmated.
+HTML_DRAFT_SUMMARY: board PNG + SVG with terminal-status signals; black checkmated.
 If you can get the answer, please reply with ANSWER: <your answer> and ends with TERMINATE. Otherwise, please generate the next REFLECTION, THOUGHT and ACTION.
-REFLECTION 1: The initial step was sufficient because the HTML draft contains both the board sketch and the decisive terminal-status evidence.
-THOUGHT 1: The HTML draft matches the FEN, and its rules table shows that Black is to move, Black is in check, and there are no legal moves. Therefore the position is checkmate and White is the winner.
+REFLECTION 1: The signals show is_checkmate=True for the black side to move — the game is already over and White wins.
+THOUGHT 1: Black is to move, is in check, and has zero legal moves → checkmate. White wins.
 ACTION 1: No action needed.
 ANSWER: white. TERMINATE
 
@@ -886,8 +938,9 @@ ANSWER: odd. TERMINATE
 
 class GeoPrompt:
     def __init__(self) -> None:
+        self._choices = []
         return
-    
+
     def initial_prompt(self, ex, n_images: int) -> str:
         initial_prompt = """Here are some tools that can help you. All are python codes. They are in tools.py and will be imported for you.
 Notice that The upper left corner of the image is the origin (0, 0). Here are some code examples you can use to draw auxiliary lines on the geometry images provided in matplotlib format.
@@ -991,10 +1044,18 @@ from tools import find_perpendicular_intersection, find_parallel_intersection
 # REQUIREMENTS #:
 1. The generated actions can resolve the given user request # USER REQUEST # perfectly. The user request is reasonable and can be solved. Try your best to solve the request.
 2. Before using any geometry formula, first extract and explicitly list the symbolic givens from the diagram logic form, such as known lengths, known angles, parallel/perpendicular relations, tangent relations, and equal segments.
-3. Treat the matplotlib coordinates as a schematic drawing by default. Do NOT use raw plotted coordinates, pixel distances, midpoint distances, or the distance formula on plotted points as true geometric lengths unless the problem explicitly states that it is a coordinate-geometry problem.
+3. ABSOLUTE RULE — matplotlib coordinates are for DRAWING ONLY, NEVER for computing lengths:
+   The `points = {...}` dictionary contains DISPLAY-ONLY pixel coordinates for rendering the schematic. They are NOT actual geometric distances.
+   FORBIDDEN (always produces wrong answers):
+     np.linalg.norm(np.array(points["A"]) - np.array(points["B"]))  # pixel distance ≠ geometric length
+     abs(points["A"][1] - points["D"][1])                           # pixel y-diff ≠ geometric length
+   CORRECT: derive ALL lengths and angles from the symbolic logic form using math/trigonometry only:
+     import math; AC = BC * math.sin(math.radians(angle_B))  # symbolic formula from given angle + side
 4. If the symbolic givens from the diagram logic form disagree with the apparent plotted lengths, trust the symbolic givens and treat the drawing as not to scale.
 5. For trapezoids, circles, similar triangles, angle-chasing, and other standard Euclidean geometry problems, solve from the stated geometric relations first; use the drawing only to decide what auxiliary line or configuration to inspect.
-6. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
+6. MANDATORY SANITY CHECK: before finalizing, verify your computed value matches one of the given choices. If it does not match any choice, you used pixel coordinates instead of geometric formulas — discard and resolve using only symbolic givens.
+7. ALWAYS EXECUTE COMPUTATION: even if no auxiliary lines are needed, you MUST write a Python code block that numerically computes the answer using `import math` and the symbolic givens. NEVER skip directly to ANSWER without running a code block first. The execution result must confirm which choice matches your calculation.
+8. If you think you got the answer, use ANSWER: X to provide the answer (where X is the choice letter A, B, C, or D), and end with TERMINATE. For multiple-choice problems output ONLY the letter — do NOT write a numeric value or expression as the answer.
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.
 # EXAMPLE #:
@@ -1095,11 +1156,28 @@ ANSWER: (B). TERMINATE
         image_path_code = ex["image_path_code"]
         code = ex["code"]
 
+        self._choices = ex.get("choices") or []
+        choices_str = ""
+        if self._choices:
+            labeled = "\n".join(f"  ({chr(65+i)}) {c}" for i, c in enumerate(self._choices))
+            choices_str = (
+                f"\nMultiple-choice options (you MUST select one):\n{labeled}\n"
+                "ANSWER FORMAT: write ANSWER: X where X is exactly one letter A, B, C, or D. "
+                "Do NOT write a numeric value or expression — the letter only."
+            )
         prompt += f"USER REQUEST #: Given the geometry diagram <img src='{image_path_code}'> and the diagram logic form {diagram_logic_form}" + \
-        f"Below is the original matplotlib code of the geometry: {code}\nYou must draw auxiliary lines to solve the following question: [{question}]\n" + \
-        "In THOUGHT 0, first list the relevant symbolic givens from the diagram logic form that you will use. Do not infer true lengths from the plotted coordinates unless the question is explicitly coordinate geometry. " + \
+        f"Below is the original matplotlib code of the geometry: {code}\nYou must draw auxiliary lines to solve the following question: [{question}]{choices_str}\n" + \
+        "In THOUGHT 0, first list the relevant symbolic givens from the diagram logic form. " + \
+        "REMINDER: the `points` dict in the code above contains pixel display coordinates — do NOT compute distances from them. " + \
+        "Solve using only the symbolic givens (lengths, angles, theorems). " + \
         "Propose matplotlib code to draw the auxiliary lines. Make sure to label the beginning and end point of the auxiliary line."
-        prompt += "Now please generate only THOUGHT 0 and ACTION 0 in RESULT. If no action needed, also reply with ANSWER: <your answer> and ends with TERMINATE in the RESULT:\n# RESULT #:\n"
+        answer_fmt = " Your ANSWER must be a single letter (A/B/C/D)." if self._choices else ""
+        prompt += (
+            f"Now please generate only THOUGHT 0 and ACTION 0 in RESULT. "
+            "ACTION 0 MUST be a Python code block that numerically computes your answer using `import math` — "
+            "do NOT skip to ANSWER without executing a code block first."
+            f"{answer_fmt}\n# RESULT #:\n"
+        )
         return prompt
     
     def get_parsing_feedback(self, error_message: str, error_code: str) -> str:
@@ -1124,8 +1202,14 @@ ANSWER: (B). TERMINATE
                 "then generate the next THOUGHT and ACTION. If you can get the answer, please also reply with "
                 "ANSWER: <your answer> and ends with TERMINATE."
             )
+            if self._choices:
+                letters = "/".join(chr(65+i) for i in range(len(self._choices)))
+                prompt += (
+                    f" This is a multiple-choice question — your ANSWER must be exactly one letter ({letters}). "
+                    "Do NOT write a numeric value or expression."
+                )
             return prompt
-    
+
 # a special prompt generator to generate codes that read all image files
 # needed for executor initialization
 def python_codes_for_images_reading(image_paths):

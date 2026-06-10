@@ -27,11 +27,14 @@ def _normalize_backend(backend: Optional[str] = None) -> str:
 
 
 def _default_api_model() -> str:
-    return os.environ.get("VISUAL_SKETCHPAD_API_MODEL", os.environ.get("VISUAL_SKETCHPAD_MODEL", "gpt-4o"))
+    return os.environ.get("VISUAL_SKETCHPAD_API_MODEL", os.environ.get("VISUAL_SKETCHPAD_MODEL", "gpt-5.1"))
+
+
+_FALLBACK_API_KEY = "sk-IEh7KU9A1qT3FYuKe8Ak0RNb3fc4AjHkguBZYwJN0OBxv3Sj"
 
 
 def _default_api_key() -> Optional[str]:
-    return os.environ.get("VISUAL_SKETCHPAD_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    return os.environ.get("VISUAL_SKETCHPAD_API_KEY") or os.environ.get("OPENAI_API_KEY") or _FALLBACK_API_KEY
 
 
 def _default_base_url() -> str:
