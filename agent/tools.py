@@ -421,3 +421,126 @@ def overlay_images(background_img, overlay_img, alpha=0.3, bounding_box=[0, 0, 1
     new_img.paste(overlay_with_alpha, (x, y, x + w, y + h), overlay_with_alpha)
 
     return new_img.convert('RGB')  # Convert back to RGB if needed
+
+
+def find_black_region(image: Image.Image, threshold: int = 8) -> list:
+    """Find the bounding box of the dark/black (missing) region in a jigsaw puzzle image.
+    Uses connected-component analysis to find the largest contiguous near-black region,
+    which robustly handles images with dark content elsewhere in the scene.
+    Use this FIRST when solving jigsaw tasks to locate where the missing piece should go,
+    before calling overlay_images or compare_jigsaw_fit.
+
+    Args:
+        image (PIL.Image.Image): the puzzle image with a black missing region
+        threshold (int): per-channel upper bound for "black". Default 8 (handles JPEG artifacts).
+
+    Returns:
+        bbox (List[float]): [x, y, w, h] in normalized [0,1] coordinates of the black region.
+            Returns [0, 0, 0, 0] if no black region found.
+
+    Example:
+        bbox = find_black_region(image_1)
+        print(bbox)  # e.g. [0.5, 0.49, 0.49, 0.5]
+        overlaid_2 = overlay_images(image_1, image_2, alpha=1.0, bounding_box=bbox)
+        overlaid_3 = overlay_images(image_1, image_3, alpha=1.0, bounding_box=bbox)
+        display(overlaid_2)
+        display(overlaid_3)
+    """
+    img_arr = np.array(image.convert("RGB"))
+    h_img, w_img = img_arr.shape[:2]
+
+    # Build near-black mask and find connected components via flood-fill (cv2)
+    dark_mask = np.all(img_arr <= threshold, axis=2).astype(np.uint8) * 255
+    # Morphological closing to bridge JPEG artifact gaps
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    closed = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, kernel)
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+
+    # Pick the largest component (skip label 0 = background)
+    if n_labels < 2:
+        return [0, 0, 0, 0]
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    best = int(np.argmax(areas)) + 1  # +1 because we skipped label 0
+    s = stats[best]
+    x0, y0 = int(s[cv2.CC_STAT_LEFT]), int(s[cv2.CC_STAT_TOP])
+    bw, bh = int(s[cv2.CC_STAT_WIDTH]), int(s[cv2.CC_STAT_HEIGHT])
+    return [
+        round(x0 / w_img, 4),
+        round(y0 / h_img, 4),
+        round(bw / w_img, 4),
+        round(bh / h_img, 4),
+    ]
+
+
+def compare_jigsaw_fit(puzzle: Image.Image, piece: Image.Image, bbox: list, border_px: int = 8) -> float:
+    """Compute how well a candidate piece fits the missing region in a jigsaw puzzle,
+    by comparing pixel colors along the shared edges. Call this for EACH candidate piece
+    and pick the one with the higher score.
+
+    The function compares the puzzle's border pixels (just outside the black region) with the
+    piece's corresponding edge pixels (the side that would be adjacent to the puzzle).
+    Only edges that are NOT at the image boundary are compared (boundary edges have no puzzle pixels).
+
+    Args:
+        puzzle (PIL.Image.Image): the original puzzle image with the missing black region
+        piece  (PIL.Image.Image): a candidate piece image
+        bbox   (List[float]): [x, y, w, h] in normalized coords (from find_black_region)
+        border_px (int): how many pixel rows/cols to compare along each edge. Default 15.
+
+    Returns:
+        score (float): similarity score in [0, 1]. Higher means better fit.
+            A correct piece typically scores > 0.7; a wrong piece < 0.5.
+
+    Example:
+        bbox = find_black_region(image_1)
+        score_a = compare_jigsaw_fit(image_1, image_2, bbox)
+        score_b = compare_jigsaw_fit(image_1, image_3, bbox)
+        print(f"image_2 score: {score_a:.3f}, image_3 score: {score_b:.3f}")
+        # choose the candidate with the higher score
+    """
+    puzzle_arr = np.array(puzzle.convert("RGB")).astype(float)
+    H, W = puzzle_arr.shape[:2]
+
+    x = int(bbox[0] * W)
+    y = int(bbox[1] * H)
+    w = max(1, int(bbox[2] * W))
+    h = max(1, int(bbox[3] * H))
+
+    piece_arr = np.array(piece.resize((w, h), Image.Resampling.LANCZOS).convert("RGB")).astype(float)
+
+    comparisons = []
+
+    # Top edge: puzzle row above region vs. piece top rows
+    if y >= border_px:
+        puz = puzzle_arr[y - border_px:y, x:x + w, :]
+        pc  = piece_arr[:border_px, :, :]
+        if puz.shape == pc.shape:
+            comparisons.append(float(np.mean((puz - pc) ** 2)))
+
+    # Bottom edge: puzzle row below region vs. piece bottom rows
+    if y + h + border_px <= H:
+        puz = puzzle_arr[y + h:y + h + border_px, x:x + w, :]
+        pc  = piece_arr[-border_px:, :, :]
+        if puz.shape == pc.shape:
+            comparisons.append(float(np.mean((puz - pc) ** 2)))
+
+    # Left edge: puzzle col left of region vs. piece left cols
+    if x >= border_px:
+        puz = puzzle_arr[y:y + h, x - border_px:x, :]
+        pc  = piece_arr[:, :border_px, :]
+        if puz.shape == pc.shape:
+            comparisons.append(float(np.mean((puz - pc) ** 2)))
+
+    # Right edge: puzzle col right of region vs. piece right cols
+    if x + w + border_px <= W:
+        puz = puzzle_arr[y:y + h, x + w:x + w + border_px, :]
+        pc  = piece_arr[:, -border_px:, :]
+        if puz.shape == pc.shape:
+            comparisons.append(float(np.mean((puz - pc) ** 2)))
+
+    if not comparisons:
+        return 0.0
+    avg_mse = sum(comparisons) / len(comparisons)
+    # Convert MSE (0–65025) to similarity score (1=perfect, 0=maximally different)
+    score = 1.0 / (1.0 + avg_mse / 500.0)
+    return round(score, 4)

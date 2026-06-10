@@ -85,7 +85,13 @@ def run_agent(
         executor = CodeExecutor(working_dir=task_directory, use_vision_tools=True)
         
         # read all images, save them in image_1, image_2, ... as PIL images
-        image_reading_codes = python_codes_for_images_reading(images)
+        # Resolve paths relative to agent/ dir so they work regardless of kernel CWD
+        _agent_dir = os.path.dirname(os.path.abspath(__file__))
+        abs_images = [
+            img if os.path.isabs(img) else os.path.normpath(os.path.join(_agent_dir, img))
+            for img in images
+        ]
+        image_reading_codes = python_codes_for_images_reading(abs_images)
         image_loading_result = executor.execute(image_reading_codes)
         if image_loading_result[0] != 0:
             raise Exception(f"Error loading images: {image_loading_result[1]}")

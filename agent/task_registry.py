@@ -7,6 +7,7 @@ TASK_SPECS = {
     "blink_depth": {"task_type": "vision", "input_file": "request.json", "label_key": "answer"},
     "blink_jigsaw": {"task_type": "vision", "input_file": "request.json", "label_key": "answer"},
     "blink_spatial": {"task_type": "vision", "input_file": "request.json", "label_key": "answer"},
+    "ChartQA": {"task_type": "vision", "input_file": "request.json", "label_key": "answer", "split": "test"},
     "geometry": {"task_type": "geo", "input_file": "ex.json", "label_key": "answer"},
     "graph_connectivity": {"task_type": "math", "input_file": "example.json", "label_key": "label"},
     "graph_isomorphism": {"task_type": "math", "input_file": "example.json", "label_key": "label"},
@@ -78,5 +79,9 @@ def iter_task_instances(task_name, project_root=None):
     tasks_root = get_tasks_root(project_root)
     task_root = tasks_root / task_name
     spec = TASK_SPECS[task_name]
-    instance_root = task_root / "processed" if spec["task_type"] == "vision" else task_root
+    if spec["task_type"] == "vision":
+        split = spec.get("split")
+        instance_root = task_root / "processed" / split if split else task_root / "processed"
+    else:
+        instance_root = task_root
     return sorted(path for path in instance_root.iterdir() if path.is_dir())
