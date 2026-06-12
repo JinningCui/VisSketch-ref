@@ -423,7 +423,7 @@ def overlay_images(background_img, overlay_img, alpha=0.3, bounding_box=[0, 0, 1
     return new_img.convert('RGB')  # Convert back to RGB if needed
 
 
-def find_black_region(image: Image.Image, threshold: int = 8) -> list:
+def _find_black_region(image: Image.Image, threshold: int = 8) -> list:
     """Find the bounding box of the dark/black (missing) region in a jigsaw puzzle image.
     Uses connected-component analysis to find the largest contiguous near-black region,
     which robustly handles images with dark content elsewhere in the scene.
@@ -472,7 +472,7 @@ def find_black_region(image: Image.Image, threshold: int = 8) -> list:
     ]
 
 
-def compare_jigsaw_fit(puzzle: Image.Image, piece: Image.Image, bbox: list, border_px: int = 8) -> float:
+def _compare_jigsaw_fit(puzzle: Image.Image, piece: Image.Image, bbox: list, border_px: int = 8) -> float:
     """Compute how well a candidate piece fits the missing region in a jigsaw puzzle,
     by comparing pixel colors along the shared edges. Call this for EACH candidate piece
     and pick the one with the higher score.
@@ -544,3 +544,33 @@ def compare_jigsaw_fit(puzzle: Image.Image, piece: Image.Image, bbox: list, bord
     # Convert MSE (0–65025) to similarity score (1=perfect, 0=maximally different)
     score = 1.0 / (1.0 + avg_mse / 500.0)
     return round(score, 4)
+
+
+def jigsaw_fit(puzzle: Image.Image, piece_a: Image.Image, piece_b: Image.Image):
+    """All-in-one jigsaw solver: locate the missing region, score both candidate pieces,
+    and display overlay images for visual memory evidence — all in one call.
+    ALWAYS use this function for jigsaw / missing-piece tasks instead of calling
+    find_black_region + compare_jigsaw_fit separately.
+
+    Args:
+        puzzle  (PIL.Image.Image): the puzzle image with the black missing region (image_1)
+        piece_a (PIL.Image.Image): first candidate piece (image_2, option A)
+        piece_b (PIL.Image.Image): second candidate piece (image_3, option B)
+
+    Returns:
+        score_a (float): edge-match similarity for piece_a (higher = better fit)
+        score_b (float): edge-match similarity for piece_b (higher = better fit)
+        Choose the candidate with the higher score.
+
+    Example:
+        score_a, score_b = jigsaw_fit(image_1, image_2, image_3)
+        print(f"score_a={score_a:.4f}, score_b={score_b:.4f}")
+        # answer is (A) if score_a > score_b, else (B)
+    """
+    from IPython.display import display as _display
+    bbox = _find_black_region(puzzle)
+    score_a = _compare_jigsaw_fit(puzzle, piece_a, bbox)
+    score_b = _compare_jigsaw_fit(puzzle, piece_b, bbox)
+    _display(overlay_images(puzzle, piece_a, alpha=0.85, bounding_box=bbox))
+    _display(overlay_images(puzzle, piece_b, alpha=0.85, bounding_box=bbox))
+    return score_a, score_b

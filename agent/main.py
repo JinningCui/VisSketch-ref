@@ -68,8 +68,10 @@ def run_agent(
     shutil.copytree(task_input, task_directory, dirs_exist_ok=True)
     
     
+    memory_path_aliases = {}
+
     if task_type == "vision":
-        
+
         # test if vision tools are loaded
         try:
             from tools import som_client, gd_client, da_client
@@ -95,6 +97,13 @@ def run_agent(
         image_loading_result = executor.execute(image_reading_codes)
         if image_loading_result[0] != 0:
             raise Exception(f"Error loading images: {image_loading_result[1]}")
+
+        # Map the in-kernel PIL variable names (image_1, image_2, ...) to the actual
+        # image filenames co-located in the output instance dir, so the memory agent
+        # can rewrite <img src='image_1'> into a browser-loadable relative src.
+        memory_path_aliases = {
+            f"image_{idx + 1}": os.path.basename(img) for idx, img in enumerate(images)
+        }
         
     elif task_type == "math":
         query = json.load(open(os.path.join(task_input, "example.json")))
@@ -157,7 +166,7 @@ def run_agent(
         prompt_generator = prompt_generator,
         parser = parser,
         executor = executor,
-        memory_agent=MemoryOrganizerAgent(memory_format, llm_runtime.client, task_directory, task_name=task_name, enable_grounding=True),
+        memory_agent=MemoryOrganizerAgent(memory_format, llm_runtime.client, task_directory, task_name=task_name, path_aliases=memory_path_aliases, enable_grounding=True),
     )
     
     # running the planning experiment

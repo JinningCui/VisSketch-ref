@@ -215,46 +215,25 @@ def overlay_images(background_img, overlay_img, alpha=0.3, bounding_box=[0, 0, 1
         display(overlayed_image)
     \"\"\"
 
-def find_black_region(image):
-    \"\"\"Find the bounding box of the dark/black (missing) region in a jigsaw puzzle image.
-    ALWAYS call this first when solving jigsaw / missing-piece tasks to locate the exact
-    position of the missing area. Never hardcode or guess the bounding box.
+def jigsaw_fit(puzzle, piece_a, piece_b):
+    \"\"\"All-in-one jigsaw solver for missing-piece questions.
+    Locates the black missing region, scores both candidate pieces by edge-pixel similarity,
+    and displays overlay images for visual memory evidence — all in one call.
+    ALWAYS use this for jigsaw tasks. Do NOT call find_black_region + compare_jigsaw_fit separately.
 
     Args:
-        image (PIL.Image.Image): the puzzle image containing a black missing region
+        puzzle  (PIL.Image.Image): puzzle image with the black missing region (image_1)
+        piece_a (PIL.Image.Image): first candidate piece (image_2, option A)
+        piece_b (PIL.Image.Image): second candidate piece (image_3, option B)
 
     Returns:
-        bbox (List[float]): [x, y, w, h] normalized [0,1] bounding box of the black region
+        score_a (float): edge-match similarity for piece_a (higher = better fit)
+        score_b (float): edge-match similarity for piece_b
 
     Example:
-        bbox = find_black_region(image_1)
-        print(bbox)  # e.g. [0.51, 0.49, 0.48, 0.50]
-        overlaid_2 = overlay_images(image_1, image_2, alpha=1.0, bounding_box=bbox)
-        overlaid_3 = overlay_images(image_1, image_3, alpha=1.0, bounding_box=bbox)
-        display(overlaid_2)
-        display(overlaid_3)
-    \"\"\"
-
-def compare_jigsaw_fit(puzzle, piece, bbox):
-    \"\"\"Compute a numerical fit score for how well a candidate piece fills the missing region
-    of a jigsaw puzzle by comparing edge pixel colors along all shared boundaries.
-    Higher score = better fit. Call for each candidate piece and choose the one with higher score.
-    This is more reliable than visual inspection of overlays alone.
-
-    Args:
-        puzzle (PIL.Image.Image): the puzzle image with the black missing region
-        piece  (PIL.Image.Image): a candidate piece image
-        bbox   (List[float]): [x, y, w, h] normalized bounding box (from find_black_region)
-
-    Returns:
-        score (float): similarity in [0, 1]. Higher is better. Correct piece typically > 0.7.
-
-    Example:
-        bbox = find_black_region(image_1)
-        score_a = compare_jigsaw_fit(image_1, image_2, bbox)
-        score_b = compare_jigsaw_fit(image_1, image_3, bbox)
-        print(f"image_2 score: {score_a:.3f}, image_3 score: {score_b:.3f}")
-        # pick the candidate with the higher score
+        score_a, score_b = jigsaw_fit(image_1, image_2, image_3)
+        print(f"score_a={score_a:.4f}, score_b={score_b:.4f}")
+        # answer is (A) if score_a > score_b, else (B)
     \"\"\"
 
 def sketch_canvas(items, output_path, width=960, height=660, title=""):
@@ -334,12 +313,15 @@ from sketch_canvas import sketch_canvas
 2. The arguments of a tool must be the same number, modality, and format specified in # TOOL LIST #;
 3. If you think you got the answer, use ANSWER: <your answer> to provide the answer, and ends with TERMINATE.
 4. All images in the initial user request are stored in PIL Image objects named image_1, image_2, ..., image_n. You can use these images in your code blocks. Use display() function to show the image in the notebook for you too see.
-5. Use as few tools as possible. Only use the tools for the use cases written in the tool description. You can use multiple tools in a single action.
+5. Only use the tools for the use cases written in the tool description. You can use multiple tools in a single action.
 6. You must return an answer with the choice letter if the user request is a multiple-choice question.
 7. When detection tool failed to detect an object, you can use the sliding_window_detection tool to search for the object.
 8. Bounding boxes may be wrong and misled you. When answering questions about small objects in bounding boxes, you should zoom in on the object to see the details.
 9. Segmentation and marking tool can help you better reason about the relationship between objects. Example use cases are spatial reasoning (e.g., left/right/above/below/on) and counting.
-10. For jigsaw / missing-piece questions: ALWAYS use find_black_region(image_1) first to get the exact bbox, then call compare_jigsaw_fit for each candidate piece. Do NOT hardcode or guess the bounding box. Choose the candidate with the higher compare_jigsaw_fit score.
+10. For jigsaw / missing-piece questions: ALWAYS call jigsaw_fit(image_1, image_2, image_3). This single function locates the missing region, scores both candidates, and displays overlay images automatically. Do NOT use find_black_region + compare_jigsaw_fit separately. Example:
+    score_a, score_b = jigsaw_fit(image_1, image_2, image_3)
+    print(f"score_a={score_a:.4f}, score_b={score_b:.4f}")
+    # answer is (A) if score_a > score_b, else (B)
 
 
 Below are some examples of how to use the tools to solve the user requests. You can refer to them for help. You can also refer to the tool descriptions for more information.

@@ -40,10 +40,33 @@ def _write_run_error(task_name, task_instance, output_root, error, tb_text):
     )
 
 
+def _is_done(task_name, task_instance, output_root):
+    pred = _task_output_dir(task_name, task_instance, output_root) / "prediction_summary.json"
+    if not pred.exists():
+        return False
+    try:
+        import json
+        d = json.loads(pred.read_text())
+        err = d.get("error")
+        if err is None:
+            return True
+        err_str = str(err).lower()
+        bad = any(k in err_str for k in ["rate", "quota", "limit", "429", "billing",
+                                          "insufficient", "connect", "timeout",
+                                          "network", "ssl", "socket"])
+        return not bad
+    except Exception:
+        return False
+
+
 def _run_one_instance(task_name, task_instance, output_root, runtime_kwargs):
     spec = TASK_SPECS[task_name]
     task_instance = Path(task_instance)
     task_output_dir = _task_output_dir(task_name, task_instance, output_root)
+
+    if _is_done(task_name, task_instance, output_root):
+        return {"task": task_name, "instance": task_instance.name, "status": "ok"}
+
     task_output_dir.mkdir(parents=True, exist_ok=True)
     log_path = task_output_dir / "run.log"
 

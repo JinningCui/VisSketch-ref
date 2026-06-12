@@ -1182,8 +1182,19 @@ Return a JSON object with the fields: consistency_issues, action_assessment, key
         return self.path_aliases.get(str(path), str(path))
 
     def _rewrite_artifact_paths(self, artifact_text: str) -> str:
-        for src, dst in self.path_aliases.items():
-            artifact_text = artifact_text.replace(src, dst)
+        # Longest keys first so image_1 cannot clobber image_10's prefix.
+        for src in sorted(self.path_aliases, key=len, reverse=True):
+            dst = self.path_aliases[src]
+            # Guard against partial-token matches (a trailing digit means a different
+            # variable) and against re-appending a suffix the text already carries
+            # (image_1 -> image_1.png must leave an existing image_1.png untouched).
+            if dst.startswith(src) and len(dst) > len(src):
+                lookahead = r"(?!\d)(?!" + re.escape(dst[len(src):]) + r")"
+            else:
+                lookahead = r"(?!\d)"
+            artifact_text = re.sub(
+                re.escape(src) + lookahead, lambda _m, d=dst: d, artifact_text
+            )
         return artifact_text
 
     def _html_img_tag(self, path: str, idx: int) -> str:

@@ -140,8 +140,100 @@ def _geometry_choice_from_numeric(text, task_instance):
     return None
 
 
+def _mantis_meta(task_instance):
+    """Return (question_type, options) for a Mantis instance."""
+    req = _read_json(Path(task_instance) / "request.json")
+    return req.get("question_type", "multi-choice"), req.get("options", [])
+
+
+def _mantis_choice(text, task_instance):
+    """Extract a choice letter (A, B, C, ...) from the model's free-form answer.
+
+    Mantis has up to 5 options, so the A-D-only `_normalize_choice` is too narrow.
+    Prefer the explicit parenthesized form, then fall back to matching the option
+    body text, then an "answer is X" phrasing.
+    """
+    if not text:
+        return None
+    _, options = _mantis_meta(task_instance)
+    match = re.search(r"\(([A-Za-z])\)", text)
+    if match:
+        return match.group(1).upper()
+    lower = text.lower()
+    for option in options:
+        body_match = re.match(r"\(?([A-Za-z])\)?[\s:.)]*(.+)", str(option))
+        if not body_match:
+            continue
+        letter, body = body_match.group(1).upper(), body_match.group(2).strip().lower()
+        if body and body in lower:
+            return letter
+    match = re.search(r"answer\s*(?:is|:)\s*\(?([A-Za-z])\)?\b", lower)
+    if match:
+        return match.group(1).upper()
+    return None
+
+
+def _mantis_is_choice_gold(gold):
+    return bool(re.fullmatch(r"[A-Za-z]", str(gold).strip()))
+
+
+def _to_float(value):
+    if value is None:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
+    return float(match.group()) if match else None
+
+
+_MV_LETTERS = "ABCDEFGHIJ"
+
+
+def _mathvista_choice(text, choices):
+    """Extract an option letter from a MathVista multi-choice answer."""
+    if not text:
+        return None
+    match = re.search(r"\(([A-Za-z])\)", text)
+    if match:
+        return match.group(1).upper()
+    lower = text.lower()
+    for idx, choice in enumerate(choices):
+        body = str(choice).strip().lower()
+        if body and body in lower and idx < len(_MV_LETTERS):
+            return _MV_LETTERS[idx]
+    match = re.search(r"answer\s*(?:is|:)\s*\(?([A-Za-z])\)?\b", lower)
+    if match:
+        return match.group(1).upper()
+    match = re.search(r"\b([A-Za-z])\b\s*$", text.strip())
+    if match:
+        return match.group(1).upper()
+    return None
+
+
 def normalize_prediction(task_name, final_answer, task_instance=None):
-    if task_name in {"geometry", "blink_depth", "blink_jigsaw", "blink_spatial", "mmvp"}:
+    if task_name == "Mantis":
+        question_type = "multi-choice"
+        if task_instance is not None:
+            question_type, _ = _mantis_meta(task_instance)
+        if question_type == "multi-choice":
+            return _mantis_choice(final_answer, task_instance)
+        return (final_answer or "").strip().lower() or None
+    if task_name == "MathVista":
+        if task_instance is None:
+            return (final_answer or "").strip().lower() or None
+        meta = _read_json(Path(task_instance) / "request.json")
+        if meta.get("question_type") == "multi_choice":
+            return _mathvista_choice(final_answer, meta.get("choices", []))
+        answer_type = meta.get("answer_type")
+        if answer_type in ("float", "integer"):
+            number = _extract_number(final_answer)
+            if number is None:
+                return None
+            if answer_type == "integer":
+                return str(int(round(number)))
+            precision = meta.get("precision")
+            precision = precision if isinstance(precision, int) else 1
+            return f"{round(number, precision):.{precision}f}"
+        return (final_answer or "").strip().lower() or None
+    if task_name in {"geometry", "blink_depth", "blink_jigsaw", "blink_spatial", "mmvp", "vstar"}:
         choice = _normalize_choice(final_answer)
         if choice is not None:
             return choice
@@ -161,7 +253,18 @@ def normalize_prediction(task_name, final_answer, task_instance=None):
 
 
 def normalize_gold(task_name, gold):
-    if task_name in {"geometry", "blink_depth", "blink_jigsaw", "blink_spatial", "mmvp"}:
+    if task_name == "Mantis":
+        gold = str(gold).strip()
+        match = re.fullmatch(r"\(?([A-Za-z])\)?", gold)
+        if match:
+            return match.group(1).upper()
+        return gold.lower()
+    if task_name == "MathVista":
+        gold = str(gold).strip()
+        if re.fullmatch(r"[A-Za-z]", gold):
+            return gold.upper()
+        return gold
+    if task_name in {"geometry", "blink_depth", "blink_jigsaw", "blink_spatial", "mmvp", "vstar"}:
         return str(gold).strip().replace("(", "").replace(")", "").upper()
     if task_name in {"graph_connectivity", "graph_isomorphism"}:
         return bool(gold)
@@ -177,6 +280,28 @@ def compare_prediction(task_name, pred, gold):
         return False
     if task_name == "graph_maxflow":
         return math.isclose(float(pred), float(gold), rel_tol=0.0, abs_tol=1e-6)
+    if task_name == "MathVista":
+        pred_text, gold_text = str(pred).strip(), str(gold).strip()
+        # Numeric answers (float/integer): compare with tolerance. Guard against
+        # list/letter golds by requiring the gold to be a single clean number.
+        clean_gold = gold_text.replace(",", "")
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", clean_gold):
+            pred_num, gold_num = _to_float(pred_text), _to_float(gold_text)
+            if pred_num is None or gold_num is None:
+                return False
+            if "." in clean_gold:
+                decimals = len(clean_gold.split(".")[1])
+                return abs(round(pred_num, decimals) - round(gold_num, decimals)) < 1e-9
+            return int(round(pred_num)) == int(round(gold_num))
+        return pred_text.lower() == gold_text.lower()
+    if task_name == "Mantis":
+        if _mantis_is_choice_gold(gold):
+            return pred == gold
+        # Short-answer: lenient containment in either direction.
+        pred_text, gold_text = str(pred).strip().lower(), str(gold).strip().lower()
+        if not pred_text or not gold_text:
+            return False
+        return gold_text == pred_text or gold_text in pred_text or pred_text in gold_text
     return pred == gold
 
 
